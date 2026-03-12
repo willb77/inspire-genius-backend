@@ -1,0 +1,99 @@
+variables:
+  STACK_FILE: '/home/ubuntu/docker/inspire-genius/backend/docker-compose.yml'
+  CODE_DIR: '/home/ubuntu/docker/inspire-genius/backend/app/code'
+
+before_script:
+  - echo "Runner started"
+
+stages:
+  - sonarScan
+  - security_scan
+  - devBuild
+  - image_scan
+  - devDeploy
+
+
+sonarScan:
+  stage: sonarScan
+  image:
+    name: sonarsource/sonar-scanner-cli:latest
+    entrypoint: [""]
+  script:
+    - sonar-scanner -Dsonar.projectKey=prism-speech -Dsonar.sources=. -Dsonar.host.url="$SONAR_HOST_URL" -Dsonar.login="$SONAR_TOKEN" -Dsonar.qualitygate.wait=true
+  only:
+    - dev-v2
+  tags:
+    - pacewisdom-docker-shared-runner
+  allow_failure: false
+
+
+
+security-scan:
+  stage: security_scan
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
+  script:
+    - echo "Running Trivy filesystem scan"
+    - trivy fs --severity HIGH,CRITICAL --exit-code 0 .
+    - echo "Enforcing CRITICAL severity"
+    - trivy fs --severity CRITICAL --exit-code 1 .
+  only:
+    - dev-v2
+  tags:
+    - pacewisdom-docker-shared-runner
+
+
+# 🔹 Build fresh images
+devBuild:
+  stage: devBuild
+  variables:
+    CI_COMMIT_REF_NAME: dev-v2
+  script:
+    - echo "Deploying in https://inspire-genius-be.pacewisdom.in"
+    - sudo rsync -ravz --exclude '.git/' ./ $CODE_DIR/
+    - sudo docker system prune -a --volumes -f
+    - sudo docker compose -f $STACK_FILE build --no-cache
+  environment:
+    name: $CI_COMMIT_REF_NAME
+    url: https://inspire-genius-be.pacewisdom.in/
+  only:
+    - dev-v2
+  tags:
+    - 3pp-sandbox
+
+############################
+# 3. IMAGE SCAN
+############################
+Trivy-Image-Scan:
+  stage: image_scan
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
+  script:
+    - echo "Scanning built Docker image"
+    - trivy image --severity HIGH,CRITICAL --exit-code 0 $IMAGE_NAME
+    - echo "Enforcing CRITICAL severity on image"
+    - trivy image --severity CRITICAL --exit-code 1 $IMAGE_NAME
+  only:
+    - dev-v2
+  tags:
+    - 3pp-sandbox
+
+
+# 🔹 Deploy new containers
+devDeploy:
+  stage: devDeploy
+  variables:
+    CI_COMMIT_REF_NAME: dev-v2
+  script:
+    - echo "Deployment started..."
+    - sudo docker compose -f $STACK_FILE up -d
+    - sudo docker exec proxy_server nginx -s reload
+  environment:
+    name: $CI_COMMIT_REF_NAME
+    url: https://inspire-genius-be.pacewisdom.in/
+  only:
+    - dev-v2
+  tags:
+    - 3pp-sandbox

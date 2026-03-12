@@ -1,0 +1,165 @@
+# Version control
+.git
+.gitignore
+
+# Python cache and compiled files
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments (exclude from container)
+.venv
+venv/
+env/
+.env
+
+# Development tools and IDE files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Logs (development logs might be useful, but exclude large log files)
+*.log
+logs/
+
+# Docker files (don't copy Docker files into the container)
+Dockerfile*
+.dockerignore
+dev.dockerignore
+docker-compose*.yml
+*.dockerfile
+
+# Documentation (keep lightweight for dev)
+*.md
+README*
+CHANGELOG*
+
+# Test files (might want to include some for dev, but exclude test outputs)
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# CI/CD files
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Sensitive files and secrets
+.env.local
+.env.production
+.env.development
+secrets/
+private/
+*.key
+*.pem
+*.crt
+*.p12
+
+# Temporary files
+tmp/
+temp/
+.tmp
+
+# Node modules if any frontend assets
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Development specific exclusions
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Jupyter notebooks (if any)
+.ipynb_checkpoints/
+
+# Database files (don't include local dev databases)
+*.db
+*.sqlite
+*.sqlite3
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+pip-log.txt
+pip-delete-this-directory.txt
+.venv
+venv/
+env/
+.env
+
+# Development
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Docker
+Dockerfile*
+.dockerignore
+docker-compose*.yml
+*.dockerfile
+
+# Documentation
+*.md
+README*
+CHANGELOG*
+
+# Tests
+tests/
+test_*
+*_test.py
+pytest.ini
+.pytest_cache/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Sensitive files
+.env.local
+.env.production
+secrets/
+private/
+*.key
+*.pem
+*.crt
+
+# Temporary files
+tmp/
+temp/
+.tmp

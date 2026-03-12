@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Environment
+.env
+*.env
+
+# SQLite/DB files
+*.db
+*.sqlite3
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Logs
+*.log
+*.log.*
+
+# Ubuntu
+*.swp
+
+# PyCharm
+.idea/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+#PROJECT
+Common Documents/
+env
+Common Documents_Alex/
+alexl.html
+
+.sonarlint/
+.github/
+coach_debug.txt
+temp_data/
