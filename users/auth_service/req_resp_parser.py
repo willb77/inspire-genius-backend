@@ -10,6 +10,11 @@ class SignupRequest(BaseModel):
     email: str = Field(..., description="User's email address")
     password: str = Field(..., description="User's password")
     confirm_password: str = Field(..., description="Confirm the password")
+    role: Optional[str] = Field(
+        None,
+        description="Optional role name (defaults to 'user'). "
+                    "Valid values: user, super-admin, coach-admin, org-admin, prompt-engineer"
+    )
 
     @model_validator(mode='after')
     def check_passwords_match(self) -> 'SignupRequest':
@@ -159,3 +164,11 @@ class UserEditRequest(BaseModel):
 
     class Config:
         extra = "forbid"
+
+
+class ChangeUserRoleRequest(BaseModel):
+    """Request model for changing a user's role (super-admin only)"""
+    role: str = Field(
+        ...,
+        description="New role name. Valid values: user, super-admin, coach-admin, org-admin, prompt-engineer"
+    )

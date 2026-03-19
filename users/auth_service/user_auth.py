@@ -98,9 +98,18 @@ class SignupView:
 
             # If Cognito registration was successful, save user to our database
             if cognito_response['status']:
-                # Get the role ID for 'user' role from database
+                # Get the role ID — use requested role or default to 'user'
                 from users.rbac.schema import get_role_id
-                user_role_id = get_role_id("user", create_if_missing=True)
+                from users.decorators import VALID_ROLES
+                requested_role = signup_request.role or "user"
+                if requested_role.lower() not in VALID_ROLES:
+                    return create_response(
+                        message=f"Invalid role '{requested_role}'. Valid roles: {', '.join(sorted(VALID_ROLES))}",
+                        status=False,
+                        error_code=VALIDATION_ERROR_CODE,
+                        status_code=400
+                    )
+                user_role_id = get_role_id(requested_role, create_if_missing=True)
 
                 # Create user in our database
                 user_data = {
@@ -586,6 +595,19 @@ class RefreshTokenView:
     def post(self, refresh_token_req: RefreshTokenRequest):
         try:
             resp = refresh_token(refresh_token_req.refresh_token)
+
+            # Enrich response with user role from the new access token
+            try:
+                from users.auth import verify_jwt_token
+                from users.rbac.schema import get_user_role_info
+                claims = verify_jwt_token(resp.get("access_token", ""))
+                user_id = claims.get("sub")
+                if user_id:
+                    role_info = get_user_role_info(user_id)
+                    resp["role"] = role_info.get("role_name") if role_info else None
+            except Exception as role_err:
+                logger.warning(f"Could not attach role to refresh response: {role_err}")
+
             return create_response(
                 message="Token refresh successful",
                 status=True,

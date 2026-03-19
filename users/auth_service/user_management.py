@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 import secrets
 from datetime import timedelta
 
-from users.auth_service.req_resp_parser import InvitationAcceptRequest, UserEditRequest, UserInviteRequest, BulkUserInviteRequest
+from users.auth_service.req_resp_parser import (
+    ChangeUserRoleRequest, InvitationAcceptRequest, UserEditRequest, UserInviteRequest, BulkUserInviteRequest
+)
 from users.auth_service.schema import (
     activate_user_and_update_password,
     create_user,
@@ -33,8 +35,8 @@ from users.response import (
 )
 from prism_inspire.core.log_config import logger
 from users.decorators import (
-    require_admin_role, check_organization_access,
-    get_user_accessible_organizations
+    require_admin_role, require_role, VALID_ROLES,
+    check_organization_access, get_user_accessible_organizations
 )
 from users.organization.schema import (
     get_organization_by_id,
@@ -872,3 +874,103 @@ class UserManagementView:
             )
 
 
+@user_management_routes.put("/users/{user_id}/role", response_model=dict)
+def change_user_role(
+    role_request: ChangeUserRoleRequest,
+    user_id: str = Path(..., description="User ID whose role to change"),
+    user_data: dict = Depends(require_role("super-admin")),
+):
+    """
+    Change a user's role (super-admin only).
+
+    PUT /v1/user-management/users/{user_id}/role
+    Body: { "role": "coach-admin" }
+    """
+    try:
+        new_role_name = role_request.role.lower()
+
+        if new_role_name not in VALID_ROLES:
+            return create_response(
+                message=f"Invalid role '{role_request.role}'. Valid roles: {', '.join(sorted(VALID_ROLES))}",
+                error_code=VALIDATION_ERROR_CODE,
+                status=False,
+                status_code=400,
+            )
+
+        session = ScopedSession()
+        try:
+            from users.models.user import UserProfile
+            from users.rbac.schema import get_role_id as _get_role_id
+
+            # Get or create the target role
+            new_role_id = _get_role_id(new_role_name, create_if_missing=True)
+            if not new_role_id:
+                return create_response(
+                    message="Failed to resolve target role",
+                    error_code=SOMETHING_WENT_WRONG,
+                    status=False,
+                    status_code=500,
+                )
+
+            # Find the user and their profile
+            user = session.query(Users).filter(Users.user_id == user_id).first()
+            if not user:
+                return create_response(
+                    message="User not found",
+                    error_code=NOT_FOUND,
+                    status=False,
+                    status_code=404,
+                )
+
+            profile = session.query(UserProfile).filter(
+                UserProfile.user_id == user_id
+            ).first()
+            if not profile:
+                return create_response(
+                    message="User profile not found",
+                    error_code=NOT_FOUND,
+                    status=False,
+                    status_code=404,
+                )
+
+            # Determine previous role name
+            previous_role_name = None
+            if profile.role:
+                prev_role = session.query(Roles).filter(Roles.id == profile.role).first()
+                previous_role_name = prev_role.name if prev_role else None
+
+            # Update the role
+            profile.role = new_role_id
+            session.commit()
+
+            logger.info(
+                f"Role changed for user {user_id}: "
+                f"{previous_role_name} -> {new_role_name} "
+                f"(by {user_data.get('sub')})"
+            )
+
+            return create_response(
+                message="User role updated successfully",
+                error_code=SUCCESS_CODE,
+                status=True,
+                data={
+                    "user_id": user_id,
+                    "email": user.email,
+                    "previous_role": previous_role_name,
+                    "new_role": new_role_name,
+                },
+            )
+        finally:
+            session.close()
+            ScopedSession.remove()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error changing role for user {user_id}: {str(e)}")
+        return create_response(
+            error_code=SOMETHING_WENT_WRONG,
+            message="Failed to change user role",
+            status=False,
+            status_code=500,
+        )
