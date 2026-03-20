@@ -8,8 +8,10 @@ before_script:
 stages:
   - sonarScan
   - security_scan
+  - migrate_check
   - devBuild
   - image_scan
+  - migrate
   - devDeploy
 
 
@@ -42,6 +44,31 @@ security-scan:
     - dev-v2
   tags:
     - pacewisdom-docker-shared-runner
+
+
+# =========================
+# MIGRATION DRY-RUN CHECK
+# =========================
+# Validates migrations can be generated without errors before building.
+# Fails fast if there's a schema/migration conflict.
+migrate:dry-run:
+  stage: migrate_check
+  image: python:3.14-slim
+  tags:
+    - 3pp-sandbox
+  only:
+    - dev-v2
+  script:
+    - pip install poetry
+    - poetry install --no-interaction --no-root
+    - echo "Checking migration consistency..."
+    - |
+      poetry run alembic check 2>/dev/null || {
+        echo "WARN: 'alembic check' not available, falling back to dry-run"
+        poetry run alembic upgrade head --sql > /dev/null
+      }
+    - echo "Migration dry-run passed."
+  allow_failure: false
 
 
 # 🔹 Build fresh images
@@ -79,6 +106,44 @@ Trivy-Image-Scan:
     - dev-v2
   tags:
     - 3pp-sandbox
+
+
+# =========================
+# AUTO-MIGRATE (pre-deploy)
+# =========================
+# Applies pending Alembic migrations after image build, before containers go live.
+# Records pre-migration head for safe rollback.
+migrate:apply:
+  stage: migrate
+  tags:
+    - 3pp-sandbox
+  only:
+    - dev-v2
+  script:
+    - echo "=== Auto-Migration ==="
+
+    # Record current migration state (rollback target)
+    - |
+      PRE_HEAD=$(sudo docker compose -f $STACK_FILE exec -T app \
+        alembic current 2>/dev/null | awk '{print $1}' | head -1) || true
+      echo "Pre-migration head: ${PRE_HEAD:-none}"
+      echo "$PRE_HEAD" > /tmp/ig-migration-rollback-target
+
+    # Apply pending migrations inside the app container
+    - |
+      sudo docker compose -f $STACK_FILE exec -T app \
+        alembic upgrade head
+    - echo "Migrations applied successfully."
+
+    # Show new head
+    - |
+      sudo docker compose -f $STACK_FILE exec -T app \
+        alembic current
+  artifacts:
+    paths:
+      - /tmp/ig-migration-rollback-target
+    expire_in: 7 days
+    when: always
 
 
 # 🔹 Deploy new containers

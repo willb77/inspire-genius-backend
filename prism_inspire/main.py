@@ -18,6 +18,13 @@ from users.dashboard.dashboard import dashboard_routes
 from users.issues.issues import issue_routes
 from ai.file_services.vector_utils.startup import startup_event, shutdown_event
 from ai.frontend_text_services.frontend_text_service import frontend_text_routes
+# Phase 2 role-specific routers
+from users.manager.routes import manager_routes
+from users.company_admin.routes import company_admin_routes
+from users.practitioner.routes import practitioner_routes
+from users.distributor.routes import distributor_routes
+# Meridian AI Mentor
+from ai.meridian.api.routes import meridian_routes as meridian_router
 
 
 app = FastAPI(
@@ -52,6 +59,13 @@ app.include_router(dashboard_routes, prefix=settings.API_V1_STR, tags=["Dashboar
 app.include_router(issue_routes, prefix=settings.API_V1_STR, tags=["Issue Reporting"])
 app.include_router(frontend_text_routes, prefix=settings.API_V1_STR, tags=["Frontend Text Management"])
 app.include_router(audio_service_router, prefix=settings.API_V1_STR, tags=["Audio Service"])
+# Phase 2 role-specific routers
+app.include_router(manager_routes, prefix=settings.API_V1_STR, tags=["Manager"])
+app.include_router(company_admin_routes, prefix=settings.API_V1_STR, tags=["Company Admin"])
+app.include_router(practitioner_routes, prefix=settings.API_V1_STR, tags=["Practitioner"])
+app.include_router(distributor_routes, prefix=settings.API_V1_STR, tags=["Distributor"])
+# Meridian AI Mentor
+app.include_router(meridian_router, prefix=settings.API_V1_STR, tags=["Meridian AI Mentor"])
 
 # Startup and shutdown events for optimal performance
 @app.on_event("startup")
