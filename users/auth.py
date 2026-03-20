@@ -29,11 +29,14 @@ JWKS = requests.get(JWKS_URL).json()
 
 def verify_jwt_token(token: str, access_token: str = None) -> dict:
     """
-    Verify JWT token signature and return claims
+    Verify JWT token signature and return claims.
+    Supports dual auth mode:
+      - Cognito RS256 tokens (have 'kid' in header)
+      - Magic Auth HS256 tokens (no 'kid' in header)
 
     Args:
         token: JWT token to verify
-        access_token: Access token for at_hash validation (optional)
+        access_token: Access token for at_hash validation (optional, Cognito only)
 
     Returns:
         Decoded token claims
@@ -42,7 +45,21 @@ def verify_jwt_token(token: str, access_token: str = None) -> dict:
         JWTError: If token verification fails
     """
     unverified_header = jwt.get_unverified_header(token)
-    kid = unverified_header["kid"]
+    kid = unverified_header.get("kid")
+
+    # Magic Auth HS256 token — no kid header
+    if not kid:
+        claims = jwt.decode(
+            token,
+            SECRET_KEY,
+            algorithms=[ALGORITHM],
+            options={"verify_aud": False}
+        )
+        # Tag the claims so downstream knows this is a magic auth token
+        claims["_auth_source"] = "magic_auth"
+        return claims
+
+    # Cognito RS256 token — lookup public key by kid
     key_data = next((k for k in JWKS["keys"] if k["kid"] == kid), None)
 
     if key_data is None:
@@ -70,6 +87,7 @@ def verify_jwt_token(token: str, access_token: str = None) -> dict:
             issuer=COGNITO_ISSUER,
             options={"verify_at_hash": False}
         )
+    claims["_auth_source"] = "cognito"
     return claims
 
 
@@ -94,8 +112,22 @@ def verify_token(
     access_token: str = Header(..., alias="access-token")
 ):
     try:
-        # Use the reusable JWT verification function
+        # Use the reusable JWT verification function (handles both Cognito + Magic Auth)
         claims = verify_jwt_token(access_token)
+
+        # Magic Auth token — extract user info directly from JWT claims
+        if claims.get("_auth_source") == "magic_auth":
+            user_info = {
+                "sub": claims.get("sub"),
+                "email": claims.get("email"),
+                "user_role": claims.get("role", "user"),
+                "is_onboarded": claims.get("is_onboarded", True),
+                "groups": [],
+                "_auth_source": "magic_auth",
+            }
+            return user_info
+
+        # Cognito RS256 token — existing flow
         user_info = {
             "sub": claims.get("sub"),
             "groups": claims.get("cognito:groups", [])
@@ -171,19 +203,26 @@ def refresh_token(
 
 def verify_websocket_token(token: str) -> dict:
     """
-    Verify WebSocket authentication token
-    
+    Verify WebSocket authentication token (supports Cognito + Magic Auth)
+
     Args:
         token: JWT access token
-        
+
     Returns:
         User data dict with sub and groups
-        
+
     Raises:
         JWTError: If token verification fails
     """
     try:
         claims = verify_jwt_token(token)
+        if claims.get("_auth_source") == "magic_auth":
+            return {
+                "sub": claims.get("sub"),
+                "email": claims.get("email"),
+                "groups": [],
+                "_auth_source": "magic_auth",
+            }
         user_info = {
             "sub": claims.get("sub"),
             "groups": claims.get("cognito:groups", [])
