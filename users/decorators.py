@@ -5,7 +5,19 @@ from users.auth import verify_token
 from users.rbac.schema import get_user_role_info
 
 # Canonical list of valid role names across the system
-VALID_ROLES = {"user", "super-admin", "coach-admin", "org-admin", "prompt-engineer", "admin"}
+VALID_ROLES = {
+    "user",
+    "manager",
+    "company-admin",
+    "practitioner",
+    "distributor",
+    "super-admin",
+    # Legacy aliases kept for backward compatibility
+    "admin",
+    "coach-admin",
+    "org-admin",
+    "prompt-engineer",
+}
 
 
 def require_role(*allowed_roles: str):
@@ -299,15 +311,19 @@ def check_organization_access(user_data: dict, requested_org_id: str) -> bool:
         if user_role == "super-admin":
             return True
         
-        # Admin / org-admin / coach-admin can only access their own organization
-        if user_role in ("admin", "org-admin", "coach-admin"):
+        # Org-scoped roles can only access their own organization
+        org_scoped_roles = (
+            "admin", "org-admin", "coach-admin",
+            "company-admin", "manager", "practitioner", "distributor",
+        )
+        if user_role in org_scoped_roles:
             user_role_info = user_data.get("role_info", {})
             user_org_id = user_role_info.get("organization_id")
             return user_org_id == requested_org_id
 
         # Other roles have no organization access
         return False
-        
+
     except Exception as e:
         logger.error(f"Error checking organization access: {str(e)}")
         return False
@@ -330,8 +346,12 @@ def get_user_accessible_organizations(user_data: dict) -> list:
         if user_role == "super-admin":
             return []  # Empty list means "all organizations"
         
-        # Admin / org-admin / coach-admin can only access their own organization
-        if user_role in ("admin", "org-admin", "coach-admin"):
+        # Org-scoped roles can only access their own organization
+        org_scoped_roles = (
+            "admin", "org-admin", "coach-admin",
+            "company-admin", "manager", "practitioner", "distributor",
+        )
+        if user_role in org_scoped_roles:
             user_role_info = user_data.get("role_info", {})
             user_org_id = user_role_info.get("organization_id")
             return [user_org_id] if user_org_id else []

@@ -7,10 +7,11 @@
 
 export type UserRole =
   | "user"
-  | "super-admin"
-  | "coach-admin"
-  | "org-admin"
-  | "prompt-engineer";
+  | "manager"
+  | "company-admin"
+  | "practitioner"
+  | "distributor"
+  | "super-admin";
 
 export interface AuthUser {
   id: string;
