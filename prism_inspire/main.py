@@ -23,6 +23,8 @@ from users.manager.routes import manager_routes
 from users.company_admin.routes import company_admin_routes
 from users.practitioner.routes import practitioner_routes
 from users.distributor.routes import distributor_routes
+# Meridian AI Mentor
+from ai.meridian.api.routes import meridian_routes as meridian_router
 
 
 app = FastAPI(
@@ -62,6 +64,8 @@ app.include_router(manager_routes, prefix=settings.API_V1_STR, tags=["Manager"])
 app.include_router(company_admin_routes, prefix=settings.API_V1_STR, tags=["Company Admin"])
 app.include_router(practitioner_routes, prefix=settings.API_V1_STR, tags=["Practitioner"])
 app.include_router(distributor_routes, prefix=settings.API_V1_STR, tags=["Distributor"])
+# Meridian AI Mentor
+app.include_router(meridian_router, prefix=settings.API_V1_STR, tags=["Meridian AI Mentor"])
 
 # Startup and shutdown events for optimal performance
 @app.on_event("startup")
