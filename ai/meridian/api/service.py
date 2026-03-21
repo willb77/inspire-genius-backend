@@ -9,6 +9,10 @@ from ai.meridian.core.types import (
     OrchestratorId, TaskStatus,
 )
 from ai.meridian.agents.aura.aura_agent import AuraAgent
+from ai.meridian.agents.nova.nova_agent import NovaAgent
+from ai.meridian.agents.james.james_agent import JamesAgent
+from ai.meridian.agents.triage.triage_orchestrator import HiringTriageOrchestrator
+from ai.meridian.collaboration.collaboration_service import CollaborationService
 from ai.meridian.memory.memory_service import MemoryService
 
 
@@ -86,12 +90,32 @@ class MeridianService:
         pd_orchestrator.register_agent(self._aura)
         self._meridian.register_orchestrator(pd_orchestrator)
 
+        # Initialize Collaboration Service
+        self._collaboration = CollaborationService()
+
+        # Initialize Nova and James
+        self._nova = NovaAgent(
+            memory_service=self._memory,
+            collaboration_service=self._collaboration,
+        )
+        self._james = JamesAgent(
+            memory_service=self._memory,
+            collaboration_service=self._collaboration,
+        )
+
+        # Initialize Strategic Advisory Orchestrator (Nova-James triage)
+        sa_orchestrator = HiringTriageOrchestrator()
+        sa_orchestrator.register_agent(self._nova)
+        sa_orchestrator.register_agent(self._james)
+        self._meridian.register_orchestrator(sa_orchestrator)
+
         # Store orchestrators for agent listing
         self._orchestrators = {
             OrchestratorId.PERSONAL_DEVELOPMENT: pd_orchestrator,
+            OrchestratorId.STRATEGIC_ADVISORY: sa_orchestrator,
         }
 
-        logger.info("MeridianService initialized with Aura agent")
+        logger.info("MeridianService initialized with Aura, Nova, James agents")
 
     async def chat(
         self,
