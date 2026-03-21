@@ -86,6 +86,50 @@ class HiringTriageOrchestrator(BaseOrchestrator):
             )
             return [DAGNode(task=task)]
 
+        # Research / knowledge / evidence
+        if any(kw in text for kw in ["research", "evidence", "synthesis", "briefing", "knowledge"]):
+            action = "research_synthesis"
+            if any(kw in text for kw in ["briefing", "executive", "summary"]):
+                action = "executive_briefing"
+            elif any(kw in text for kw in ["search", "find", "look up"]):
+                action = "knowledge_search"
+            task = AgentTask(
+                agent_id=AgentId.SAGE, action=action,
+                parameters=context.get("parameters", {}),
+                context=context, behavioral_context=behavioral_context,
+            )
+            return [DAGNode(task=task)]
+
+        # Leadership / executive coaching
+        if any(kw in text for kw in ["leadership", "executive", "coaching session", "leader"]):
+            action = "leadership_signature"
+            if any(kw in text for kw in ["team", "compatibility"]):
+                action = "team_compatibility"
+            elif any(kw in text for kw in ["scenario", "exercise", "practice"]):
+                action = "coaching_scenario"
+            elif any(kw in text for kw in ["coach", "session", "conversation"]):
+                action = "executive_coaching"
+            task = AgentTask(
+                agent_id=AgentId.ASCEND, action=action,
+                parameters=context.get("parameters", {}),
+                context=context, behavioral_context=behavioral_context,
+            )
+            return [DAGNode(task=task)]
+
+        # Student / academic / university / school-age
+        if any(kw in text for kw in ["student", "academic", "university", "college", "school", "grade", "study"]):
+            action = "career_exploration"
+            if any(kw in text for kw in ["academic", "study", "course", "plan"]):
+                action = "academic_plan"
+            elif any(kw in text for kw in ["prism", "assessment"]):
+                action = "prism_assessment"
+            task = AgentTask(
+                agent_id=AgentId.ALEX, action=action,
+                parameters=context.get("parameters", {}),
+                context=context, behavioral_context=behavioral_context,
+            )
+            return [DAGNode(task=task)]
+
         # Career strategy (default for career/promotion keywords)
         if any(kw in text for kw in ["career", "promotion", "career path", "next role"]):
             task = AgentTask(

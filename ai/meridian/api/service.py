@@ -16,6 +16,15 @@ from ai.meridian.agents.anchor.anchor_agent import AnchorAgent
 from ai.meridian.agents.forge.forge_agent import ForgeAgent
 from ai.meridian.analytics.dashboard import AgentAnalytics
 from ai.meridian.agents.triage.triage_orchestrator import HiringTriageOrchestrator
+from ai.meridian.agents.atlas.atlas_agent import AtlasAgent
+from ai.meridian.agents.sentinel.sentinel_agent import SentinelAgent
+from ai.meridian.agents.nexus.nexus_agent import NexusAgent
+from ai.meridian.agents.bridge.bridge_agent import BridgeAgent
+from ai.meridian.agents.sage.sage_agent import SageAgent
+from ai.meridian.agents.ascend.ascend_agent import AscendAgent
+from ai.meridian.agents.alex.alex_agent import AlexAgent
+from ai.meridian.agents.org_intel.org_intel_orchestrator import OrgIntelOrchestrator
+from ai.meridian.feedback.feedback_service import FeedbackService
 from ai.meridian.collaboration.collaboration_service import CollaborationService
 from ai.meridian.memory.memory_service import MemoryService
 
@@ -174,13 +183,39 @@ class MeridianService:
         sa_orchestrator.register_agent(self._james)
         self._meridian.register_orchestrator(sa_orchestrator)
 
+        # Initialize Organizational Intelligence agents
+        self._atlas = AtlasAgent(memory_service=self._memory)
+        self._sentinel = SentinelAgent(memory_service=self._memory)
+        self._nexus = NexusAgent(memory_service=self._memory)
+        self._bridge = BridgeAgent(memory_service=self._memory)
+
+        # Initialize remaining Strategic Advisory agents
+        self._sage = SageAgent(memory_service=self._memory)
+        self._ascend = AscendAgent(memory_service=self._memory)
+        self._alex = AlexAgent(memory_service=self._memory)
+        sa_orchestrator.register_agent(self._sage)
+        sa_orchestrator.register_agent(self._ascend)
+        sa_orchestrator.register_agent(self._alex)
+
+        # Initialize Organizational Intelligence Orchestrator
+        oi_orchestrator = OrgIntelOrchestrator()
+        oi_orchestrator.register_agent(self._atlas)
+        oi_orchestrator.register_agent(self._sentinel)
+        oi_orchestrator.register_agent(self._nexus)
+        oi_orchestrator.register_agent(self._bridge)
+        self._meridian.register_orchestrator(oi_orchestrator)
+
+        # Initialize RLHF Feedback Service
+        self._feedback = FeedbackService(memory_service=self._memory)
+
         # Store orchestrators for agent listing
         self._orchestrators = {
             OrchestratorId.PERSONAL_DEVELOPMENT: pd_orchestrator,
             OrchestratorId.STRATEGIC_ADVISORY: sa_orchestrator,
+            OrchestratorId.ORGANIZATIONAL_INTELLIGENCE: oi_orchestrator,
         }
 
-        logger.info("MeridianService initialized with Aura, Echo, Anchor, Forge, Nova, James agents")
+        logger.info("MeridianService initialized with all 13 specialist agents")
 
     async def chat(
         self,
@@ -272,3 +307,28 @@ class MeridianService:
                 })
 
         return agents
+
+    async def record_rlhf_feedback(
+        self,
+        user_id: str,
+        session_id: str,
+        agent_id: str,
+        original_response: str,
+        correction: Optional[str] = None,
+        rating: Optional[int] = None,
+        outcome: Optional[str] = None,
+    ) -> str:
+        """Record RLHF feedback through the feedback pipeline."""
+        return await self._feedback.record_feedback(
+            user_id=user_id, session_id=session_id, agent_id=agent_id,
+            original_response=original_response, correction=correction,
+            rating=rating, outcome=outcome,
+        )
+
+    def get_feedback_stats(self, agent_id: Optional[str] = None) -> dict:
+        """Get RLHF feedback statistics."""
+        return self._feedback.get_stats(agent_id).model_dump()
+
+    def export_training_data(self) -> list[dict]:
+        """Export RLHF training data for fine-tuning."""
+        return self._feedback.export_training_data()
