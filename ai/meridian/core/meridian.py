@@ -175,30 +175,61 @@ class Meridian:
     ) -> str:
         """
         Synthesize multiple agent results into a single coherent response.
-        In production, this calls the LLM with Meridian's persona prompt.
+
+        Rules:
+        - User never sees agent names — only Meridian's unified voice
+        - Prefer 'response' field over 'summary' for richer output
+        - Handle privacy flags (Anchor's is_private)
+        - In production, an LLM call would rewrite for voice consistency
         """
         if not results:
             return "I'd love to help you with that. Could you share a bit more detail?"
 
         successful = [r for r in results if r.status.value == "completed"]
+        escalated = [r for r in results if r.status.value == "awaiting_human"]
+
+        # Handle escalation (e.g., Anchor crisis detection)
+        if escalated:
+            parts = []
+            for r in escalated:
+                text = r.output.get("response") or r.output.get("summary", "")
+                if text:
+                    parts.append(text)
+            if parts:
+                return "\n\n".join(parts)
+
         if not successful:
             return (
                 "I'm working on that for you, but I need a moment to gather "
                 "the right insights. Could you provide some additional context?"
             )
 
-        # Aggregate outputs from successful agents
-        combined_outputs = []
+        # Collect response texts, preferring 'response' over 'summary'
+        combined = []
         for result in successful:
-            if result.output.get("summary"):
-                combined_outputs.append(result.output["summary"])
-            elif result.output.get("response"):
-                combined_outputs.append(result.output["response"])
+            text = result.output.get("response") or result.output.get("summary", "")
+            if text:
+                combined.append(text)
 
-        if combined_outputs:
-            return " ".join(combined_outputs)
+        if combined:
+            return "\n\n".join(combined)
 
         return "I've analyzed your request. Let me know if you'd like to dive deeper into any aspect."
+
+    def get_agent_attribution(self, results: list) -> list[dict]:
+        """
+        Get agent attribution for admin/debug views.
+        NOT exposed to end users.
+        """
+        attribution = []
+        for r in results:
+            if hasattr(r, "agent_id") and hasattr(r, "confidence"):
+                attribution.append({
+                    "agent_id": r.agent_id.value if hasattr(r.agent_id, "value") else str(r.agent_id),
+                    "confidence": r.confidence,
+                    "status": r.status.value if hasattr(r.status, "value") else str(r.status),
+                })
+        return attribution
 
     def get_session_context(self, session_id: str) -> Optional[dict]:
         """Retrieve session context for conversation continuity."""

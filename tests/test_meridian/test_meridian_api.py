@@ -48,10 +48,20 @@ class TestPersonalDevelopmentOrchestrator:
         assert dag[0].task.action == "track_growth"
 
     @pytest.mark.asyncio
-    async def test_plan_default_generates_context(self):
+    async def test_plan_stress_routes_to_anchor(self):
         orch = PersonalDevelopmentOrchestrator()
         dag = await orch.plan(
             "I feel stressed about work",
+            {"user_id": "u1", "behavioral_context": None},
+        )
+        assert dag[0].task.agent_id == AgentId.ANCHOR
+        assert dag[0].task.action == "stress_checkin"
+
+    @pytest.mark.asyncio
+    async def test_plan_default_generates_context(self):
+        orch = PersonalDevelopmentOrchestrator()
+        dag = await orch.plan(
+            "Tell me something about my work",
             {"user_id": "u1", "behavioral_context": None},
         )
         assert dag[0].task.agent_id == AgentId.AURA

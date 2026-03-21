@@ -11,6 +11,10 @@ from ai.meridian.core.types import (
 from ai.meridian.agents.aura.aura_agent import AuraAgent
 from ai.meridian.agents.nova.nova_agent import NovaAgent
 from ai.meridian.agents.james.james_agent import JamesAgent
+from ai.meridian.agents.echo.echo_agent import EchoAgent
+from ai.meridian.agents.anchor.anchor_agent import AnchorAgent
+from ai.meridian.agents.forge.forge_agent import ForgeAgent
+from ai.meridian.analytics.dashboard import AgentAnalytics
 from ai.meridian.agents.triage.triage_orchestrator import HiringTriageOrchestrator
 from ai.meridian.collaboration.collaboration_service import CollaborationService
 from ai.meridian.memory.memory_service import MemoryService
@@ -28,44 +32,95 @@ class PersonalDevelopmentOrchestrator(BaseOrchestrator):
     async def plan(self, intent: str, context: dict) -> list[DAGNode]:
         """
         Build a DAG for personal development tasks.
-        For now, routes behavioral questions to Aura.
+        Routes to Aura, Echo, Anchor, or Forge based on intent.
         """
         user_id = context.get("user_id")
         behavioral_context = context.get("behavioral_context")
-
-        # Check if this is a behavioral/PRISM-related query
         text = intent.lower()
+
+        # Anchor — stress, burnout, energy, resilience (check first for safety)
+        anchor_keywords = [
+            "stress", "burnout", "exhausted", "overwhelmed", "tired",
+            "energy", "resilience", "recovery", "anxious", "struggling",
+            "can't cope", "breaking point", "drained",
+        ]
+        if any(kw in text for kw in anchor_keywords):
+            action = "stress_checkin"
+            if any(kw in text for kw in ["protocol", "plan", "help me recover"]):
+                action = "recovery_protocol"
+            elif any(kw in text for kw in ["tips", "advice", "strategies"]):
+                action = "resilience_tips"
+            task = AgentTask(
+                agent_id=AgentId.ANCHOR, action=action,
+                parameters={"user_id": user_id, "query": intent},
+                context=context, behavioral_context=behavioral_context,
+            )
+            return [DAGNode(task=task)]
+
+        # Forge — conflict, communication, stakeholders, meetings
+        forge_keywords = [
+            "conflict", "disagreement", "difficult conversation", "negotiat",
+            "stakeholder", "influence", "communication", "meeting prep",
+            "relationship", "tension", "confrontation", "persuad",
+        ]
+        if any(kw in text for kw in forge_keywords):
+            action = "resolve_conflict"
+            if any(kw in text for kw in ["playbook", "script", "prepare", "how to say"]):
+                action = "communication_playbook"
+            elif any(kw in text for kw in ["meeting", "briefing", "attendee"]):
+                action = "meeting_briefing"
+            task = AgentTask(
+                agent_id=AgentId.FORGE, action=action,
+                parameters={"user_id": user_id, "situation": intent},
+                context=context, behavioral_context=behavioral_context,
+            )
+            return [DAGNode(task=task)]
+
+        # Echo — learning, skills, development, training
+        echo_keywords = [
+            "learn", "skill", "training", "course", "study",
+            "develop", "competency", "tutorial", "lesson", "teach",
+            "practice", "improve my",
+        ]
+        if any(kw in text for kw in echo_keywords):
+            action = "create_learning_path"
+            if any(kw in text for kw in ["quick", "micro", "lesson", "today"]):
+                action = "micro_lesson"
+            elif any(kw in text for kw in ["progress", "track", "status"]):
+                action = "track_progress"
+            skill = intent  # Use full intent as skill context
+            task = AgentTask(
+                agent_id=AgentId.ECHO, action=action,
+                parameters={"user_id": user_id, "skill_gap": skill, "topic": skill},
+                context=context, behavioral_context=behavioral_context,
+            )
+            return [DAGNode(task=task)]
+
+        # Aura — PRISM, behavioral, personality
         behavioral_keywords = [
             "prism", "personality", "behavior", "behavioral", "preference",
             "profile", "insight", "dimension", "gold", "green", "blue", "red",
             "self-discovery", "self discovery", "who am i", "my style",
-            "my strengths", "my weaknesses", "growth",
+            "my strengths", "my weaknesses",
         ]
-
         if any(kw in text for kw in behavioral_keywords):
-            # Route to Aura
             action = "interpret_profile"
             if any(kw in text for kw in ["deep", "detail", "granular", "explore"]):
                 action = "deep_dive"
             elif any(kw in text for kw in ["growth", "change", "progress", "evolved"]):
                 action = "track_growth"
-
             task = AgentTask(
-                agent_id=AgentId.AURA,
-                action=action,
+                agent_id=AgentId.AURA, action=action,
                 parameters={"user_id": user_id, "query": intent},
-                context=context,
-                behavioral_context=behavioral_context,
+                context=context, behavioral_context=behavioral_context,
             )
             return [DAGNode(task=task)]
 
-        # Default: ask Aura for context, then handle generically
+        # Default: Aura generates behavioral context
         task = AgentTask(
-            agent_id=AgentId.AURA,
-            action="generate_context",
+            agent_id=AgentId.AURA, action="generate_context",
             parameters={"user_id": user_id, "requesting_agent": "meridian"},
-            context=context,
-            behavioral_context=behavioral_context,
+            context=context, behavioral_context=behavioral_context,
         )
         return [DAGNode(task=task)]
 
@@ -78,6 +133,7 @@ class MeridianService:
 
     def __init__(self, memory_service: Optional[MemoryService] = None) -> None:
         self._memory = memory_service or MemoryService()
+        self._analytics = AgentAnalytics()
         self._meridian = Meridian()
 
         # Initialize Aura
@@ -88,6 +144,15 @@ class MeridianService:
         # Initialize Personal Development Orchestrator with Aura
         pd_orchestrator = PersonalDevelopmentOrchestrator()
         pd_orchestrator.register_agent(self._aura)
+
+        # Initialize remaining Personal Development agents
+        self._echo = EchoAgent(memory_service=self._memory)
+        self._anchor = AnchorAgent(memory_service=self._memory)
+        self._forge = ForgeAgent(memory_service=self._memory)
+        pd_orchestrator.register_agent(self._echo)
+        pd_orchestrator.register_agent(self._anchor)
+        pd_orchestrator.register_agent(self._forge)
+
         self._meridian.register_orchestrator(pd_orchestrator)
 
         # Initialize Collaboration Service
@@ -115,7 +180,7 @@ class MeridianService:
             OrchestratorId.STRATEGIC_ADVISORY: sa_orchestrator,
         }
 
-        logger.info("MeridianService initialized with Aura, Nova, James agents")
+        logger.info("MeridianService initialized with Aura, Echo, Anchor, Forge, Nova, James agents")
 
     async def chat(
         self,
@@ -135,6 +200,17 @@ class MeridianService:
             user_id=user_id,
             behavioral_context=behavioral_context,
         )
+
+        # Record analytics for each agent result
+        for agent_result in result.get("results", []):
+            self._analytics.record_usage(
+                agent_id=agent_result.get("agent_id", "unknown"),
+                action=agent_result.get("metadata", {}).get("action", "unknown"),
+                user_id=user_id,
+                session_id=session_id,
+                confidence=agent_result.get("confidence", 0.0),
+                status=agent_result.get("status", "completed"),
+            )
 
         return result
 
@@ -171,6 +247,10 @@ class MeridianService:
         )
         logger.info(f"MeridianService: feedback stored {entry_id} for user {user_id}")
         return entry_id
+
+    def get_analytics_summary(self) -> dict:
+        """Get analytics dashboard summary for super-admin."""
+        return self._analytics.get_dashboard_summary()
 
     def list_agent_capabilities(self) -> list[dict[str, Any]]:
         """List all registered agent capabilities."""
