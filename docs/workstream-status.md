@@ -26,3 +26,7 @@
 - [x] 6.F1 Process Template Library (9 templates) — COMPLETE (branch: ws-f/phase-6)
 - [x] 6.F2 Agent Health Monitoring & Circuit Breakers — COMPLETE (branch: ws-f/phase-6)
 - [x] 6.F3 Rate Limiting, Quotas & Cost Management — COMPLETE (branch: ws-f/phase-6)
+- [x] 7.F1 Meridian Onboarding Experience — COMPLETE (branch: ws-f/phase-7)
+- [x] 7.F2 Voice-First & Multi-Language Support — COMPLETE (branch: ws-f/phase-7)
+- [x] 7.F3 Production Hardening (Security) — COMPLETE (branch: ws-f/phase-7)
+- [x] 7.F4 Admin Configuration — COMPLETE (branch: ws-f/phase-7)
