@@ -6,6 +6,7 @@ Usage:
 
     db_url = await get_secret("inspire-genius/DATABASE_URL")
 """
+from __future__ import annotations
 
 import json
 import logging

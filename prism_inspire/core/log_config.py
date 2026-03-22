@@ -5,6 +5,7 @@ Usage:
     from prism_inspire.core.log_config import logger
     logger.info("Processing request", extra={"user_id": "123", "action": "login"})
 """
+from __future__ import annotations
 
 import json
 import logging

@@ -5,7 +5,7 @@ description = ""
 authors = [
     {name = "Yajnesh S Kottary",email = "yajnesh.k@pacewisdom.com"}
 ]
-requires-python = ">=3.14,<4.0"
+requires-python = ">=3.10,<4.0"
 dependencies = [
     "alembic (>=1.18.1,<2.0.0)",
     "async-openai (>=0.0.52,<0.0.53)",

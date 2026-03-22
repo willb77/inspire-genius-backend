@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from fastapi import APIRouter, Query, HTTPException, WebSocket, WebSocketDisconnect, Depends
 from fastapi.responses import StreamingResponse,HTMLResponse
 from prism_inspire.core.file_utils import S3_BUCKET, S3FileHandler, file_handler
