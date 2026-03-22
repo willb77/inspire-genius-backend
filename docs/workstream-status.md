@@ -2,6 +2,13 @@
 
 ## WS-C Backend
 - [x] 1.1 Multi-Role Auth API — COMPLETE (branch: ws-c/foundation)
+- [x] 3.C1 Manager API Endpoints (8 endpoints) — COMPLETE (branch: ws-c/phase-3)
+- [x] 3.C2 Company Admin API Endpoints (10 endpoints) — COMPLETE (branch: ws-c/phase-3)
+- [x] 3.C3 Practitioner API Endpoints (8 endpoints) — COMPLETE (branch: ws-c/phase-3)
+- [x] 3.C4 Distributor API Endpoints (8 endpoints) — COMPLETE (branch: ws-c/phase-3)
+- [x] 3.C5 User Dashboard API Endpoints (5 endpoints) — COMPLETE (branch: ws-c/phase-3)
+- [x] 3.C6 Shared Cost Dashboard API (2 endpoints) — COMPLETE (branch: ws-c/phase-3)
+- [x] 3.C7 RBAC Middleware Enhancement — COMPLETE (branch: ws-c/phase-3)
 
 ## WS-F Agent Architecture
 - [x] 1.9 Meridian Architecture Design Document — COMPLETE

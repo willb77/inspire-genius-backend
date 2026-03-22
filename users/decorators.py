@@ -5,7 +5,29 @@ from users.auth import verify_token
 from users.rbac.schema import get_user_role_info
 
 # Canonical list of valid role names across the system
-VALID_ROLES = {"user", "super-admin", "coach-admin", "org-admin", "prompt-engineer", "admin"}
+VALID_ROLES = {
+    "user", "manager", "company-admin", "practitioner",
+    "distributor", "super-admin",
+    # Legacy aliases
+    "admin", "coach-admin", "org-admin", "prompt-engineer",
+}
+
+# Role hierarchy — higher index = more privilege.
+# require_role_or_above() uses this to allow higher roles implicitly.
+ROLE_HIERARCHY = [
+    "user",           # 0
+    "manager",        # 1
+    "company-admin",  # 2
+    "practitioner",   # 3
+    "distributor",    # 4
+    "super-admin",    # 5
+]
+_ROLE_RANK = {r: i for i, r in enumerate(ROLE_HIERARCHY)}
+
+
+def role_rank(role_name: str) -> int:
+    """Return numeric rank for a role (0 = user, 5 = super-admin). Unknown roles → -1."""
+    return _ROLE_RANK.get(role_name.lower(), -1)
 
 
 def require_role(*allowed_roles: str):
@@ -89,6 +111,26 @@ def require_role(*allowed_roles: str):
             )
 
     return dependency
+
+
+def require_role_or_above(minimum_role: str):
+    """
+    Hierarchy-aware guard.  Allows the given role **and every role above it**
+    in ROLE_HIERARCHY.  e.g. require_role_or_above("manager") allows
+    manager, company-admin, practitioner, distributor, super-admin.
+    """
+    min_rank = role_rank(minimum_role)
+    allowed = {r for r in ROLE_HIERARCHY if role_rank(r) >= min_rank}
+    return require_role(*allowed)
+
+
+def log_access(user_data: dict, resource: str, action: str = "access"):
+    """Lightweight audit log entry for RBAC decisions."""
+    logger.info(
+        f"RBAC_AUDIT | user={user_data.get('sub')} "
+        f"role={user_data.get('user_role')} "
+        f"action={action} resource={resource}"
+    )
 
 
 def require_authenticated_user():
@@ -299,15 +341,19 @@ def check_organization_access(user_data: dict, requested_org_id: str) -> bool:
         if user_role == "super-admin":
             return True
         
-        # Admin / org-admin / coach-admin can only access their own organization
-        if user_role in ("admin", "org-admin", "coach-admin"):
+        # Any org-scoped role can access their own org
+        org_scoped = (
+            "admin", "org-admin", "coach-admin",
+            "company-admin", "manager", "practitioner", "distributor",
+        )
+        if user_role in org_scoped:
             user_role_info = user_data.get("role_info", {})
             user_org_id = user_role_info.get("organization_id")
             return user_org_id == requested_org_id
 
         # Other roles have no organization access
         return False
-        
+
     except Exception as e:
         logger.error(f"Error checking organization access: {str(e)}")
         return False
@@ -330,8 +376,11 @@ def get_user_accessible_organizations(user_data: dict) -> list:
         if user_role == "super-admin":
             return []  # Empty list means "all organizations"
         
-        # Admin / org-admin / coach-admin can only access their own organization
-        if user_role in ("admin", "org-admin", "coach-admin"):
+        org_scoped = (
+            "admin", "org-admin", "coach-admin",
+            "company-admin", "manager", "practitioner", "distributor",
+        )
+        if user_role in org_scoped:
             user_role_info = user_data.get("role_info", {})
             user_org_id = user_role_info.get("organization_id")
             return [user_org_id] if user_org_id else []
