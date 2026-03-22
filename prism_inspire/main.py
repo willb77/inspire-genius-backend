@@ -1,6 +1,24 @@
+import os
+
+import sentry_sdk
 from fastapi import FastAPI
 from prism_inspire.core.config import settings
 from fastapi.middleware.cors import CORSMiddleware
+from prism_inspire.middleware.observability import ObservabilityMiddleware
+from prism_inspire.middleware.health import health_router
+
+# ── Sentry error tracking ────────────────────────────────────────────
+_sentry_dsn = os.getenv("SENTRY_DSN", "")
+if _sentry_dsn:
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        environment=os.getenv("APP_ENV", "development"),
+        traces_sample_rate=0.2,  # 20% of requests traced
+        profiles_sample_rate=0.1,
+        send_default_pii=False,
+        enable_tracing=True,
+    )
+
 # Router imports
 from users.auth_service.user_auth import user_auth_route as user_auth_router
 from users.auth_service.user_management import user_management_routes as user_management_router
@@ -42,6 +60,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(ObservabilityMiddleware)
+
+# Health check endpoints (no /v1 prefix — infrastructure routes)
+app.include_router(health_router)
 
 # Include app routers
 app.include_router(user_auth_router, prefix=settings.API_V1_STR, tags=["User Authentication"])
