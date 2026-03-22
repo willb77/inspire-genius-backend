@@ -19,6 +19,23 @@ VALID_ROLES = {
     "prompt-engineer",
 }
 
+# Role hierarchy — higher index = more privilege.
+# require_role_or_above() uses this to allow higher roles implicitly.
+ROLE_HIERARCHY = [
+    "user",           # 0
+    "manager",        # 1
+    "company-admin",  # 2
+    "practitioner",   # 3
+    "distributor",    # 4
+    "super-admin",    # 5
+]
+_ROLE_RANK = {r: i for i, r in enumerate(ROLE_HIERARCHY)}
+
+
+def role_rank(role_name: str) -> int:
+    """Return numeric rank for a role (0 = user, 5 = super-admin). Unknown roles → -1."""
+    return _ROLE_RANK.get(role_name.lower(), -1)
+
 
 def require_role(*allowed_roles: str):
     """
@@ -103,16 +120,36 @@ def require_role(*allowed_roles: str):
     return dependency
 
 
+def require_role_or_above(minimum_role: str):
+    """
+    Hierarchy-aware guard.  Allows the given role **and every role above it**
+    in ROLE_HIERARCHY.  e.g. require_role_or_above("manager") allows
+    manager, company-admin, practitioner, distributor, super-admin.
+    """
+    min_rank = role_rank(minimum_role)
+    allowed = {r for r in ROLE_HIERARCHY if role_rank(r) >= min_rank}
+    return require_role(*allowed)
+
+
+def log_access(user_data: dict, resource: str, action: str = "access"):
+    """Lightweight audit log entry for RBAC decisions."""
+    logger.info(
+        f"RBAC_AUDIT | user={user_data.get('sub')} "
+        f"role={user_data.get('user_role')} "
+        f"action={action} resource={resource}"
+    )
+
+
 def require_authenticated_user():
     """
     Simple authentication decorator - allows any authenticated user
-    
+
     This decorator only verifies that the user has a valid JWT token.
     It does not perform any role-based authorization checks.
-    
+
     Returns:
         FastAPI dependency function that returns user_data dict
-        
+
     Raises:
         HTTPException: 401 if authentication fails, 500 for server errors
     """
@@ -139,14 +176,14 @@ def require_authenticated_user():
 def require_admin_role():
     """
     Role-based access control decorator for admin and super-admin roles
-    
+
     This decorator ensures that only users with 'admin' or 'super-admin' roles
     can access the protected endpoint. Admin users are automatically scoped
     to their organization, while super-admin users have system-wide access.
-    
+
     Returns:
        function that returns user_data dict with role info
-        
+
     Raises:
         HTTPException: 401 for auth issues, 403 for access denied, 500 for server errors
     """
@@ -296,21 +333,21 @@ def require_super_admin_role():
 def check_organization_access(user_data: dict, requested_org_id: str) -> bool:
     """
     Helper function to check if a user can access a specific organization
-    
+
     Args:
         user_data: User data dict from authentication decorator
         requested_org_id: Organization ID being requested
-        
+
     Returns:
         bool: True if user can access the organization, False otherwise
     """
     try:
         user_role = user_data.get("user_role", "").lower()
-        
+
         # Super-admin can access any organization
         if user_role == "super-admin":
             return True
-        
+
         # Org-scoped roles can only access their own organization
         org_scoped_roles = (
             "admin", "org-admin", "coach-admin",
@@ -332,20 +369,20 @@ def check_organization_access(user_data: dict, requested_org_id: str) -> bool:
 def get_user_accessible_organizations(user_data: dict) -> list:
     """
     Helper function to get list of organization IDs that a user can access
-    
+
     Args:
         user_data: User data dict from authentication decorator
-        
+
     Returns:
         list: List of organization IDs the user can access
     """
     try:
         user_role = user_data.get("user_role", "").lower()
-        
+
         # Super-admin can access all organizations (return empty list to indicate "all")
         if user_role == "super-admin":
             return []  # Empty list means "all organizations"
-        
+
         # Org-scoped roles can only access their own organization
         org_scoped_roles = (
             "admin", "org-admin", "coach-admin",
