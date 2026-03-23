@@ -6,6 +6,18 @@ from prism_inspire.core.config import settings
 from fastapi.middleware.cors import CORSMiddleware
 from prism_inspire.middleware.observability import ObservabilityMiddleware
 from prism_inspire.middleware.health import health_router
+from prism_inspire.middleware.rate_limiter import RateLimitMiddleware
+from prism_inspire.middleware.security_headers import (
+    SecurityHeadersMiddleware,
+    ProductionErrorHandler,
+)
+
+# Optional: enrich OpenAPI metadata when api_docs module is available
+try:
+    from prism_inspire.core.api_docs import API_METADATA, API_TAGS
+except ImportError:  # pragma: no cover
+    API_METADATA = None
+    API_TAGS = None
 
 # ── Sentry error tracking ────────────────────────────────────────────
 _sentry_dsn = os.getenv("SENTRY_DSN", "")
@@ -55,11 +67,24 @@ from users.analytics.export_routes import export_routes
 from ai.meridian.api.routes import meridian_routes as meridian_router
 
 
-app = FastAPI(
-    title=settings.PROJECT_NAME,
-    docs_url=settings.DOCS_URL,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json"
-)
+_app_kwargs: dict = {
+    "title": settings.PROJECT_NAME,
+    "docs_url": settings.DOCS_URL,
+    "openapi_url": f"{settings.API_V1_STR}/openapi.json",
+}
+if API_METADATA is not None:
+    _app_kwargs.update({
+        "title": API_METADATA["title"],
+        "description": API_METADATA["description"],
+        "version": API_METADATA["version"],
+        "docs_url": API_METADATA["docs_url"],
+        "redoc_url": API_METADATA["redoc_url"],
+        "openapi_url": API_METADATA["openapi_url"],
+    })
+if API_TAGS is not None:
+    _app_kwargs["openapi_tags"] = API_TAGS
+
+app = FastAPI(**_app_kwargs)
 
 origins = [origin.strip() for origin in settings.ALLOWED_ORIGINS.split(",")]
 
@@ -70,7 +95,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Phase 7 — Security middleware (order: outermost runs first)
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RateLimitMiddleware)
 app.add_middleware(ObservabilityMiddleware)
+
+# Production error handler — suppresses stack traces when APP_ENV=production
+app.add_exception_handler(Exception, ProductionErrorHandler())
 
 # Health check endpoints (no /v1 prefix — infrastructure routes)
 app.include_router(health_router)
