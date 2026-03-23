@@ -1,0 +1,18 @@
+# .dev.docker-compose.yml
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: dev.Dockerfile
+      # Docker will automatically use .dockerignore (which is now a symlink to dev.dockerignore)
+    container_name: prsm-inspire-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+    env_file:
+      - .env

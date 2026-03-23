@@ -1,0 +1,153 @@
+import os
+
+import sentry_sdk
+from fastapi import FastAPI
+from prism_inspire.core.config import settings
+from fastapi.middleware.cors import CORSMiddleware
+from prism_inspire.middleware.observability import ObservabilityMiddleware
+from prism_inspire.middleware.health import health_router
+from prism_inspire.middleware.rate_limiter import RateLimitMiddleware
+from prism_inspire.middleware.security_headers import (
+    SecurityHeadersMiddleware,
+    ProductionErrorHandler,
+)
+
+# Optional: enrich OpenAPI metadata when api_docs module is available
+try:
+    from prism_inspire.core.api_docs import API_METADATA, API_TAGS
+except ImportError:  # pragma: no cover
+    API_METADATA = None
+    API_TAGS = None
+
+# ── Sentry error tracking ────────────────────────────────────────────
+_sentry_dsn = os.getenv("SENTRY_DSN", "")
+if _sentry_dsn:
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        environment=os.getenv("APP_ENV", "development"),
+        traces_sample_rate=0.2,  # 20% of requests traced
+        profiles_sample_rate=0.1,
+        send_default_pii=False,
+        enable_tracing=True,
+    )
+
+# Router imports
+from users.auth_service.user_auth import user_auth_route as user_auth_router
+from users.auth_service.user_management import user_management_routes as user_management_router
+from users.rbac.rbac_routes import rbac_route as rbac_router
+from users.rbac.rbac_relationships import rbac_relationship_route as rbac_relationship_router
+from users.onboarding.onboarding import onboarding_route
+from ai.agent_settings.onboarding import agents_settings as agents_settings_router
+from ai.file_services.file_service import file_service as file_service_router
+from ai.audio_services.audio_service import audio_service as audio_service_router
+from ai.ai_agent_services.agent_services.agent_services import agent_services as agent_services_router
+from ai.chat_services.chat_routes import chat_routes as chat_routes_router
+from users.organization.organization import organization_routes
+from users.license.license import license_routes
+from users.dashboard.dashboard import dashboard_routes
+from users.issues.issues import issue_routes
+from ai.file_services.vector_utils.startup import startup_event, shutdown_event
+from ai.frontend_text_services.frontend_text_service import frontend_text_routes
+# Phase 2 role-specific routers
+from users.manager.routes import manager_routes
+from users.company_admin.routes import company_admin_routes
+from users.practitioner.routes import practitioner_routes
+from users.distributor.routes import distributor_routes
+from users.user_dashboard.routes import user_dashboard_routes
+from users.costs.routes import cost_routes
+# Phase 4 feedback & prompt routers
+from users.feedback.routes import feedback_routes
+from users.feedback.admin_routes import feedback_admin_routes
+from users.feedback.prompt_routes import prompt_admin_routes
+# Phase 5 analytics, reports & export routers
+from users.analytics.routes import analytics_routes
+from users.analytics.report_routes import report_routes
+from users.analytics.export_routes import export_routes
+# Meridian AI Mentor
+from ai.meridian.api.routes import meridian_routes as meridian_router
+
+
+_app_kwargs: dict = {
+    "title": settings.PROJECT_NAME,
+    "docs_url": settings.DOCS_URL,
+    "openapi_url": f"{settings.API_V1_STR}/openapi.json",
+}
+if API_METADATA is not None:
+    _app_kwargs.update({
+        "title": API_METADATA["title"],
+        "description": API_METADATA["description"],
+        "version": API_METADATA["version"],
+        "docs_url": API_METADATA["docs_url"],
+        "redoc_url": API_METADATA["redoc_url"],
+        "openapi_url": API_METADATA["openapi_url"],
+    })
+if API_TAGS is not None:
+    _app_kwargs["openapi_tags"] = API_TAGS
+
+app = FastAPI(**_app_kwargs)
+
+origins = [origin.strip() for origin in settings.ALLOWED_ORIGINS.split(",")]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+# Phase 7 — Security middleware (order: outermost runs first)
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RateLimitMiddleware)
+app.add_middleware(ObservabilityMiddleware)
+
+# Production error handler — suppresses stack traces when APP_ENV=production
+app.add_exception_handler(Exception, ProductionErrorHandler())
+
+# Health check endpoints (no /v1 prefix — infrastructure routes)
+app.include_router(health_router)
+
+# Include app routers
+app.include_router(user_auth_router, prefix=settings.API_V1_STR, tags=["User Authentication"])
+app.include_router(user_management_router, prefix=settings.API_V1_STR, tags=["User Management"])
+app.include_router(rbac_router, prefix=settings.API_V1_STR, tags=["RBAC"])
+app.include_router(rbac_relationship_router, prefix=settings.API_V1_STR, tags=["RBAC Relationships"])
+app.include_router(onboarding_route, prefix=settings.API_V1_STR, tags=["Onboarding"])
+app.include_router(agents_settings_router, prefix=settings.API_V1_STR, tags=["Agent Settings"])
+app.include_router(file_service_router, prefix=settings.API_V1_STR, tags=["File Service"])
+app.include_router(agent_services_router, prefix=settings.API_V1_STR, tags=["Agent Services"])
+app.include_router(chat_routes_router, prefix=settings.API_V1_STR, tags=["Chat Management"])
+app.include_router(organization_routes, prefix=settings.API_V1_STR, tags=["Organization Management"])
+app.include_router(license_routes, prefix=settings.API_V1_STR, tags=["License Management"])
+app.include_router(dashboard_routes, prefix=settings.API_V1_STR, tags=["Dashboard & Analytics"])
+app.include_router(issue_routes, prefix=settings.API_V1_STR, tags=["Issue Reporting"])
+app.include_router(frontend_text_routes, prefix=settings.API_V1_STR, tags=["Frontend Text Management"])
+app.include_router(audio_service_router, prefix=settings.API_V1_STR, tags=["Audio Service"])
+# Phase 2 role-specific routers
+app.include_router(manager_routes, prefix=settings.API_V1_STR, tags=["Manager"])
+app.include_router(company_admin_routes, prefix=settings.API_V1_STR, tags=["Company Admin"])
+app.include_router(practitioner_routes, prefix=settings.API_V1_STR, tags=["Practitioner"])
+app.include_router(distributor_routes, prefix=settings.API_V1_STR, tags=["Distributor"])
+app.include_router(user_dashboard_routes, prefix=settings.API_V1_STR, tags=["User Dashboard"])
+app.include_router(cost_routes, prefix=settings.API_V1_STR, tags=["Cost Dashboard"])
+# Phase 4 feedback & prompt routers
+app.include_router(feedback_routes, prefix=settings.API_V1_STR, tags=["Feedback"])
+app.include_router(feedback_admin_routes, prefix=settings.API_V1_STR, tags=["Feedback Admin"])
+app.include_router(prompt_admin_routes, prefix=settings.API_V1_STR, tags=["Prompt Management"])
+# Phase 5 analytics, reports & export routers
+app.include_router(analytics_routes, prefix=settings.API_V1_STR, tags=["Analytics"])
+app.include_router(report_routes, prefix=settings.API_V1_STR, tags=["Reports"])
+app.include_router(export_routes, prefix=settings.API_V1_STR, tags=["Data Export"])
+# Meridian AI Mentor
+app.include_router(meridian_router, prefix=settings.API_V1_STR, tags=["Meridian AI Mentor"])
+
+# Startup and shutdown events for optimal performance
+@app.on_event("startup")
+async def startup():
+    """Initialize connection pools and resources on startup."""
+    await startup_event()
+
+@app.on_event("shutdown") 
+async def shutdown():
+    """Clean up resources on shutdown."""
+    await shutdown_event()
+
