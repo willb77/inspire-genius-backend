@@ -43,6 +43,10 @@ from users.practitioner.routes import practitioner_routes
 from users.distributor.routes import distributor_routes
 from users.user_dashboard.routes import user_dashboard_routes
 from users.costs.routes import cost_routes
+# Phase 4 feedback & prompt routers
+from users.feedback.routes import feedback_routes
+from users.feedback.admin_routes import feedback_admin_routes
+from users.feedback.prompt_routes import prompt_admin_routes
 # Meridian AI Mentor
 from ai.meridian.api.routes import meridian_routes as meridian_router
 
@@ -90,6 +94,10 @@ app.include_router(practitioner_routes, prefix=settings.API_V1_STR, tags=["Pract
 app.include_router(distributor_routes, prefix=settings.API_V1_STR, tags=["Distributor"])
 app.include_router(user_dashboard_routes, prefix=settings.API_V1_STR, tags=["User Dashboard"])
 app.include_router(cost_routes, prefix=settings.API_V1_STR, tags=["Cost Dashboard"])
+# Phase 4 feedback & prompt routers
+app.include_router(feedback_routes, prefix=settings.API_V1_STR, tags=["Feedback"])
+app.include_router(feedback_admin_routes, prefix=settings.API_V1_STR, tags=["Feedback Admin"])
+app.include_router(prompt_admin_routes, prefix=settings.API_V1_STR, tags=["Prompt Management"])
 # Meridian AI Mentor
 app.include_router(meridian_router, prefix=settings.API_V1_STR, tags=["Meridian AI Mentor"])
 

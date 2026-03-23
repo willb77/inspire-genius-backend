@@ -9,6 +9,10 @@
 - [x] 3.C5 User Dashboard API Endpoints (5 endpoints) — COMPLETE (branch: ws-c/phase-3)
 - [x] 3.C6 Shared Cost Dashboard API (2 endpoints) — COMPLETE (branch: ws-c/phase-3)
 - [x] 3.C7 RBAC Middleware Enhancement — COMPLETE (branch: ws-c/phase-3)
+- [x] 4.C1 Feedback Collection API (4 endpoints) — COMPLETE (branch: ws-c/phase-4)
+- [x] 4.C2 Feedback Aggregation API (4 endpoints) — COMPLETE (branch: ws-c/phase-4)
+- [x] 4.C3 Prompt Version Management (6 endpoints) — COMPLETE (branch: ws-c/phase-4)
+- [x] 4.C4 Correction Storage as Agent Memories — COMPLETE (branch: ws-c/phase-4)
 
 ## WS-F Agent Architecture
 - [x] 1.9 Meridian Architecture Design Document — COMPLETE
