@@ -47,6 +47,10 @@ from users.costs.routes import cost_routes
 from users.feedback.routes import feedback_routes
 from users.feedback.admin_routes import feedback_admin_routes
 from users.feedback.prompt_routes import prompt_admin_routes
+# Phase 5 analytics, reports & export routers
+from users.analytics.routes import analytics_routes
+from users.analytics.report_routes import report_routes
+from users.analytics.export_routes import export_routes
 # Meridian AI Mentor
 from ai.meridian.api.routes import meridian_routes as meridian_router
 
@@ -98,6 +102,10 @@ app.include_router(cost_routes, prefix=settings.API_V1_STR, tags=["Cost Dashboar
 app.include_router(feedback_routes, prefix=settings.API_V1_STR, tags=["Feedback"])
 app.include_router(feedback_admin_routes, prefix=settings.API_V1_STR, tags=["Feedback Admin"])
 app.include_router(prompt_admin_routes, prefix=settings.API_V1_STR, tags=["Prompt Management"])
+# Phase 5 analytics, reports & export routers
+app.include_router(analytics_routes, prefix=settings.API_V1_STR, tags=["Analytics"])
+app.include_router(report_routes, prefix=settings.API_V1_STR, tags=["Reports"])
+app.include_router(export_routes, prefix=settings.API_V1_STR, tags=["Data Export"])
 # Meridian AI Mentor
 app.include_router(meridian_router, prefix=settings.API_V1_STR, tags=["Meridian AI Mentor"])
 

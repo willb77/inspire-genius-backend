@@ -13,6 +13,9 @@
 - [x] 4.C2 Feedback Aggregation API (4 endpoints) — COMPLETE (branch: ws-c/phase-4)
 - [x] 4.C3 Prompt Version Management (6 endpoints) — COMPLETE (branch: ws-c/phase-4)
 - [x] 4.C4 Correction Storage as Agent Memories — COMPLETE (branch: ws-c/phase-4)
+- [x] 5.C1 Analytics Aggregation (4 endpoints) — COMPLETE (branch: ws-c/phase-5)
+- [x] 5.C2 Reporting Engine (3 endpoints) — COMPLETE (branch: ws-c/phase-5)
+- [x] 5.C3 Data Export (3 endpoints) — COMPLETE (branch: ws-c/phase-5)
 
 ## WS-F Agent Architecture
 - [x] 1.9 Meridian Architecture Design Document — COMPLETE
