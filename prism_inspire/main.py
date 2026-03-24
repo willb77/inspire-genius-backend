@@ -86,19 +86,29 @@ if API_TAGS is not None:
 
 app = FastAPI(**_app_kwargs)
 
+# ── Middleware stack ──────────────────────────────────────────────────
+# Starlette executes middleware in REVERSE registration order:
+# last registered = outermost = runs first.
+# We need CORSMiddleware to be the OUTERMOST so CORS headers are always
+# present — even on 429 rate-limit or 500 error responses.  Therefore
+# CORSMiddleware must be registered LAST.
+
 origins = [origin.strip() for origin in settings.ALLOWED_ORIGINS.split(",")]
 
+# 1. Innermost — runs last (closest to route handlers)
+app.add_middleware(ObservabilityMiddleware)
+app.add_middleware(RateLimitMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
+
+# 2. Outermost — runs first, ensuring CORS headers on ALL responses
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "access-token", "x-api-key"],
+    expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
 )
-# Phase 7 — Security middleware (order: outermost runs first)
-app.add_middleware(SecurityHeadersMiddleware)
-app.add_middleware(RateLimitMiddleware)
-app.add_middleware(ObservabilityMiddleware)
 
 # Production error handler — suppresses stack traces when APP_ENV=production
 app.add_exception_handler(Exception, ProductionErrorHandler())

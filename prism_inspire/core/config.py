@@ -67,7 +67,12 @@ class Settings(BaseSettings):
     
     BASE_URL: str
     FRONTEND_URL: str
-    ALLOWED_ORIGINS: str
+    ALLOWED_ORIGINS: str = (
+        "http://localhost:5173,"
+        "http://localhost:3000,"
+        "https://d1nxsns258du4y.cloudfront.net,"
+        "https://dvw79io0afgrp.cloudfront.net"
+    )
     
     MILVUS_URI: str
     MILVUS_USER: str
