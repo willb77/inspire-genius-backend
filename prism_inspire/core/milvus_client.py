@@ -1,9 +1,39 @@
 from typing import Optional
 from langchain_milvus import Milvus
-from pymilvus import connections
+from pymilvus import connections, MilvusClient as PyMilvusClient
 from prism_inspire.core.config import settings
 from prism_inspire.core.log_config import logger
 from prism_inspire.core.ai_client import embeddings_client_google
+
+
+def _ensure_orm_connection(uri: str, token: str) -> None:
+    """Ensure the pymilvus ORM connections registry has an active connection.
+
+    langchain-milvus 0.3.x internally creates a ``MilvusClient`` whose gRPC
+    handler is registered under a random alias (``cm-<id>``).  The pymilvus
+    ORM ``Collection`` class later looks up that alias via
+    ``connections._fetch_handler`` — but in pymilvus 2.6.x the MilvusClient
+    API and ORM connections API use separate registries, so the lookup fails.
+
+    As a workaround we pre-create a ``MilvusClient``, grab its handler, and
+    copy it into the ORM registry under the same alias.  We then override
+    ``MilvusClient.__init__`` for subsequent calls so that every new instance
+    also gets registered.
+    """
+    _orig_init = PyMilvusClient.__init__
+
+    def _patched_init(self: PyMilvusClient, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
+        _orig_init(self, *args, **kwargs)
+        try:
+            alias = self._using
+            handler = self._get_connection()
+            if hasattr(connections, "_alias_handlers"):
+                connections._alias_handlers[alias] = handler
+        except Exception:
+            pass
+
+    PyMilvusClient.__init__ = _patched_init  # type: ignore[method-assign]
+
 
 class _MilvusClient:
     """
@@ -14,22 +44,16 @@ class _MilvusClient:
     obtaining vector store instances for different collections.
     """
 
-    def __init__(self):
-        """
-        Initializes the connection arguments and embeddings.
-        This is designed to be idempotent.
-        """
-
+    def __init__(self) -> None:
         try:
             self._connection_args = {
                 "uri": settings.MILVUS_URI,
-                "token": settings.MILVUS_PASSWORD,
+                "token": settings.MILVUS_PASSWORD or "",
             }
-            # Establish the pymilvus connection so langchain_milvus can use it
-            connections.connect(
-                alias="default",
-                uri=settings.MILVUS_URI,
-                token=settings.MILVUS_PASSWORD or "",
+            # Patch MilvusClient so every instance auto-registers in ORM connections
+            _ensure_orm_connection(
+                settings.MILVUS_URI,
+                settings.MILVUS_PASSWORD or "",
             )
             self._embeddings = embeddings_client_google
             self._initialized = True
@@ -40,12 +64,10 @@ class _MilvusClient:
 
     def get_store(self, collection_name: Optional[str] = None) -> Milvus:
         """
-        Returns a cached Milvus vector store for the specified collection,
-        creating it if it doesn't exist.
+        Returns a Milvus vector store for the specified collection.
         """
         name = collection_name or settings.MILVUS_COLLECTION_NAME
-        # this will also create a new collection if not available
-            
+
         try:
             logger.info(f"Retrieving Milvus store for collection: '{name}'")
             store = Milvus(
@@ -60,5 +82,6 @@ class _MilvusClient:
         except Exception as e:
             logger.error(f"Failed to create Milvus store for '{name}': {e}")
             raise
+
 
 milvus_client = _MilvusClient()
