@@ -58,7 +58,7 @@ class Feedback(Base):
     )
 
     user = relationship("Users", foreign_keys=[user_id])
-    agent = relationship("Agents", foreign_keys=[agent_id])
+    agent = relationship("Agent", foreign_keys=[agent_id])
     corrections = relationship("FeedbackCorrection", back_populates="feedback", cascade="all, delete-orphan")
 
 
@@ -136,7 +136,7 @@ class PromptTemplate(Base):
         Index("ix_prompt_templates_status", "status"),
     )
 
-    agent = relationship("Agents", foreign_keys=[agent_id])
+    agent = relationship("Agent", foreign_keys=[agent_id])
     parent = relationship("PromptTemplate", remote_side=[id])
     creator = relationship("Users", foreign_keys=[created_by])
 
@@ -168,4 +168,4 @@ class AgentMemory(Base):
         Index("ix_agent_memories_is_active", "is_active"),
     )
 
-    agent = relationship("Agents", foreign_keys=[agent_id])
+    agent = relationship("Agent", foreign_keys=[agent_id])
