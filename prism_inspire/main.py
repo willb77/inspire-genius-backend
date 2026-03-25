@@ -1,6 +1,9 @@
 import os
 
-import sentry_sdk
+try:
+    import sentry_sdk
+except ImportError:
+    sentry_sdk = None  # type: ignore[assignment]
 from fastapi import FastAPI
 from prism_inspire.core.config import settings
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,7 +24,7 @@ except ImportError:  # pragma: no cover
 
 # ── Sentry error tracking ────────────────────────────────────────────
 _sentry_dsn = os.getenv("SENTRY_DSN", "")
-if _sentry_dsn:
+if _sentry_dsn and sentry_sdk:
     sentry_sdk.init(
         dsn=_sentry_dsn,
         environment=os.getenv("APP_ENV", "development"),
