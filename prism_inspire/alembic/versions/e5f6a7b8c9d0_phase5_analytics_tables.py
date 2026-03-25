@@ -22,7 +22,7 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     # -- reports --
     op.create_table(
-        "reports",
+        "analytics_reports",
         sa.Column("id", UUID(as_uuid=True), primary_key=True, default=uuid.uuid4),
         sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False),
         sa.Column("report_type", sa.String(50), nullable=False),
@@ -39,9 +39,9 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now()),
         sa.Column("is_deleted", sa.Boolean, server_default=sa.text("false")),
     )
-    op.create_index("ix_reports_user_id", "reports", ["user_id"])
-    op.create_index("ix_reports_status", "reports", ["status"])
-    op.create_index("ix_reports_created_at", "reports", ["created_at"])
+    op.create_index("ix_analytics_reports_user_id", "analytics_reports", ["user_id"])
+    op.create_index("ix_analytics_reports_status", "analytics_reports", ["status"])
+    op.create_index("ix_analytics_reports_created_at", "analytics_reports", ["created_at"])
 
     # -- export_jobs --
     op.create_table(
@@ -70,7 +70,7 @@ def downgrade() -> None:
     op.drop_index("ix_export_jobs_user_id", table_name="export_jobs")
     op.drop_table("export_jobs")
 
-    op.drop_index("ix_reports_created_at", table_name="reports")
-    op.drop_index("ix_reports_status", table_name="reports")
-    op.drop_index("ix_reports_user_id", table_name="reports")
-    op.drop_table("reports")
+    op.drop_index("ix_analytics_reports_created_at", table_name="analytics_reports")
+    op.drop_index("ix_analytics_reports_status", table_name="analytics_reports")
+    op.drop_index("ix_analytics_reports_user_id", table_name="analytics_reports")
+    op.drop_table("analytics_reports")

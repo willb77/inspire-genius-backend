@@ -20,8 +20,8 @@ from prism_inspire.db.base import Base
 USER_ID = "users.user_id"
 
 
-class Report(Base):
-    __tablename__ = "reports"
+class AnalyticsReport(Base):
+    __tablename__ = "analytics_reports"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(

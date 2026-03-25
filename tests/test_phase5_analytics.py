@@ -9,7 +9,7 @@ from datetime import date, timedelta
 # ── Model imports & table names ──────────────────────────────────────
 class TestModels:
     def test_report_model_imports(self):
-        from users.models.analytics import Report
+        from users.models.analytics import AnalyticsReport as Report
         assert Report.__tablename__ == "reports"
 
     def test_export_job_model_imports(self):
@@ -17,7 +17,7 @@ class TestModels:
         assert ExportJob.__tablename__ == "export_jobs"
 
     def test_report_columns(self):
-        from users.models.analytics import Report
+        from users.models.analytics import AnalyticsReport as Report
         col_names = {c.name for c in Report.__table__.columns}
         expected = {
             "id", "user_id", "report_type", "title", "status", "format",

@@ -10,7 +10,7 @@ from sqlalchemy.sql import func
 from prism_inspire.core.log_config import logger
 from prism_inspire.db.session import ScopedSession
 from users.decorators import require_authenticated_user, log_access
-from users.models.analytics import Report
+from users.models.analytics import AnalyticsReport as Report
 from users.response import (
     create_response,
     SUCCESS_CODE,
