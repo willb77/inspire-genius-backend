@@ -1,5 +1,6 @@
 from typing import Optional
 from langchain_milvus import Milvus
+from pymilvus import connections
 from prism_inspire.core.config import settings
 from prism_inspire.core.log_config import logger
 from prism_inspire.core.ai_client import embeddings_client_google
@@ -7,7 +8,7 @@ from prism_inspire.core.ai_client import embeddings_client_google
 class _MilvusClient:
     """
     A thread-safe singleton client for managing Milvus vector store instances.
-    
+
     This class ensures that the connection to Milvus and the embedding model
     are initialized only once. It provides a central point of access for
     obtaining vector store instances for different collections.
@@ -24,6 +25,12 @@ class _MilvusClient:
                 "uri": settings.MILVUS_URI,
                 "token": settings.MILVUS_PASSWORD,
             }
+            # Establish the pymilvus connection so langchain_milvus can use it
+            connections.connect(
+                alias="default",
+                uri=settings.MILVUS_URI,
+                token=settings.MILVUS_PASSWORD or "",
+            )
             self._embeddings = embeddings_client_google
             self._initialized = True
             logger.info("Milvus client initialized successfully.")
