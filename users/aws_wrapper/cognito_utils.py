@@ -786,6 +786,10 @@ class CognitoUserHandler:
         self, username: str, attributes: Dict[str, Any]
     ) -> Dict[str, Any]:
         try:
+            if not username:
+                self.logger.warning("Cannot update Cognito: username is None/empty")
+                return {"status": True, "message": "Skipped Cognito update (no username)"}
+
             is_active = attributes.pop("is_active", None)
             user_attributes = self._prepare_attributes(attributes)
 
@@ -801,10 +805,10 @@ class CognitoUserHandler:
             return self._handle_client_error(e)
 
         except Exception as e:
-            self.logger.error(f"Unexpected error updating Cognito user: {str(e)}")
+            self.logger.error(f"Unexpected error updating Cognito user {username}: {str(e)}")
             return {
                 "status": False,
-                "message": "Unexpected error while updating Cognito user",
+                "message": f"Unexpected error while updating Cognito user: {str(e)}",
             }
 
     # Helper methods

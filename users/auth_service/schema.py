@@ -1197,20 +1197,27 @@ def edit_active_user(email: str, edit_data: dict) -> dict:
         if not updated:
             return {"success": False, "message": "No fields to update"}
         
-        # Save to database
+        # Save to database first
         session.add(user)
         if user.profile:
             session.add(user.profile)
-
-        # Update Cognito
-        error_response = validator.update_cognito_user(user.user_id, cognito_attributes)
-        if error_response:
-            return error_response
-            
         session.commit()
+
+        # Update Cognito (non-blocking — DB is already committed)
+        cognito_warning = None
+        if cognito_attributes:
+            error_response = validator.update_cognito_user(user.user_id, cognito_attributes)
+            if error_response:
+                cognito_warning = error_response.get("message", "Cognito sync failed")
+                logger.warning(f"User {email} updated in DB but Cognito sync failed: {cognito_warning}")
+
+        message = "User updated"
+        if cognito_warning:
+            message += f" (note: {cognito_warning})"
+
         return {
             "success": True,
-            "message": "User updated",
+            "message": message,
             "data": {"updated_fields": updated}
         }
         
