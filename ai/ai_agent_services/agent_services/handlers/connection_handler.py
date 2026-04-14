@@ -150,6 +150,20 @@ class ConnectionHandler:
 
         # Process file IDs and load preferences in parallel
         file_ids = initial_payload.get("file_ids", [])
+
+        # Auto-load ALL user documents when no specific files are selected
+        # so agents always have access to the user's uploaded documents
+        if not file_ids:
+            try:
+                file_ids = await self._get_all_user_file_ids()
+                logger.info(
+                    f"[prism-agent-{self.agent_id}] No file_ids provided — "
+                    f"auto-loaded {len(file_ids)} user documents"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to auto-load user files: {e}")
+                file_ids = []
+
         try:
             self.filenames = await get_filenames_for_files(file_ids, user_id=self.user_data["sub"])
             self.report_str = await get_report_str_for_files(file_ids)
@@ -333,6 +347,28 @@ class ConnectionHandler:
                 "auth_error", f"Failed to initialize conversation: {str(e)}"
             )
             return False
+
+    async def _get_all_user_file_ids(self) -> list:
+        """Fetch all non-deleted file IDs belonging to the current user.
+
+        Used when no specific file_ids are provided in the WebSocket init
+        message so that agents can automatically access all user documents.
+        """
+        from ai.file_services.schema import get_files_by_user_id
+
+        user_id = self.user_data["sub"]
+        date_groups = get_files_by_user_id(uuid.UUID(user_id))
+        if not date_groups:
+            return []
+
+        # date_groups is a list of {"date_label", "date", "files": [file_dicts]}
+        all_ids = []
+        for group in date_groups:
+            for f in group.get("files", []):
+                file_id = f.get("id") if isinstance(f, dict) else getattr(f, "id", None)
+                if file_id:
+                    all_ids.append(str(file_id))
+        return all_ids
 
     async def _send_error(self, error_type, message):
         await self.ws.send_text(json.dumps({"type": error_type, "message": message}))

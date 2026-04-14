@@ -60,31 +60,43 @@ class CareerAgent(BaseAgent):
                 })
             )
         
-        # Search user documents only
+        # Search user documents
         result_data = ""
         search_queries = helper_response.user_document_queries
-        
-        if search_queries and self.file_ids:
+
+        if search_queries:
             search_query = " ".join(search_queries)
-            
+
             user_data = await get_similarity_search_async(
                 vector_store=self.vector_store,
                 query=search_query,
                 k=3,
                 source=True,
                 filter=f'user_id == "{self.user_data["sub"]}"',
-                file_ids=self.file_ids,
+                file_ids=self.file_ids if self.file_ids else None,
             )
-            
+
             if not isinstance(user_data, Exception):
                 result_data = self.normalize_data(user_data)
         
         # Assemble knowledge base
-        knowledge_parts = []
-        
+        knowledge_parts = [
+            "<DOCUMENT_ACCESS_INSTRUCTIONS>\n"
+            "You have FULL access to the user's uploaded documents. The content from their documents "
+            "has been retrieved and is provided below. When the user asks about their documents, "
+            "reports, or files, reference and quote directly from the content provided. Never say "
+            "you cannot see, read, or access their documents — the document content is right here "
+            "for you to use.\n"
+            "</DOCUMENT_ACCESS_INSTRUCTIONS>"
+        ]
+
         if result_data:
-            knowledge_parts.append(f"# User Documents:\n{result_data}")
-        
+            knowledge_parts.append(
+                "<USER_CASE_FILES>\n"
+                f"The following content comes from the user's uploaded documents:\n\n{result_data}\n"
+                "</USER_CASE_FILES>"
+            )
+
         if other_agent_response:
             agent_label = other_agent_name or "Specialized Coach"
             knowledge_parts.append(
@@ -92,7 +104,7 @@ class CareerAgent(BaseAgent):
                 f"The following is expert advice from {agent_label}:\n"
                 f"{other_agent_response}"
             )
-        
+
         knowledge_base = "\n\n---\n\n".join(knowledge_parts)
         system_data_prompt = self.system_prompt.format(knowledge_base=knowledge_base)
         

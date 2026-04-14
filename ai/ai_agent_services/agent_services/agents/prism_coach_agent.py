@@ -25,20 +25,18 @@ class PrismCoachAgent(BaseAgent):
         prism_professional_knowledge_search_query = helper_response.prism_coach_professional_knowledge
 
         result_data_coro = None
-        if self.file_ids and user_document_search_query: 
+        if user_document_search_query:
             result_data_coro = get_similarity_search_async(
                 vector_store=self.vector_store,
-                query=user_document_search_query,       
+                query=user_document_search_query,
                 k=2,
                 source=True,
                 filter=f'user_id == "{self.user_data["sub"]}"',
-                file_ids=self.file_ids,
+                file_ids=self.file_ids if self.file_ids else None,
                 report_str=self.report_str,
             )
-        elif self.file_ids:
-            result_data = "General PRISM Knowledge only. No user-specific questions."
         else:
-            result_data = "No user files selected. inform them to select a file in the coach dashboard in the documents tab."
+            result_data = "General PRISM Knowledge only. No user-specific questions."
 
         # Get coach knowledge
         prism_filter = 'category == "prism_coach_knowledge"'
@@ -81,7 +79,14 @@ class PrismCoachAgent(BaseAgent):
             professional_knowledge_data = self.normalize_data(professional_knowledge_data)
 
         knowledge_base = (
-            "<INTERNAL_EXPERTISE>\n" 
+            "<DOCUMENT_ACCESS_INSTRUCTIONS>\n"
+            "You have FULL access to the user's uploaded documents. The content from their documents "
+            "has been retrieved and is provided below in the USER_CASE_FILES section. When the user "
+            "asks about their documents, reports, or files, reference and quote directly from the "
+            "content provided below. Never say you cannot see, read, or access their documents — "
+            "the document content is right here for you to use.\n"
+            "</DOCUMENT_ACCESS_INSTRUCTIONS>\n\n"
+            "<INTERNAL_EXPERTISE>\n"
             "This section contains your training and PRISM theory. Adopt this as your own knowledge.\n\n"
             "**Behaviour Preference Classification:**\n"
             "1. if `score >= 75` → very high behaviour preference\n"
@@ -93,9 +98,10 @@ class PrismCoachAgent(BaseAgent):
             + "\n"
             + professional_knowledge_data
             + "\n</INTERNAL_EXPERTISE>\n\n"
-            
+
             "<USER_CASE_FILES>\n"
-            "This section contains the specific documents, reports, and diaries of the user you are talking to.\n\n"
+            "This section contains the specific documents, reports, and diaries of the user you are "
+            "talking to. You CAN see and reference this content. Use it to provide personalized coaching.\n\n"
             + result_data
             + "\n</USER_CASE_FILES>"
         )

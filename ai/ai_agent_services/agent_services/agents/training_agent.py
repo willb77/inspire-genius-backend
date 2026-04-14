@@ -20,7 +20,7 @@ class TrainingAgent(BaseAgent):
             k=3,
             source=True,
             filter=f'user_id == "{self.user_data["sub"]}"',
-            file_ids=self.file_ids,
+            file_ids=self.file_ids if self.file_ids else None,
         )
 
         prism_data_coro = get_similarity_search_async(
@@ -48,10 +48,20 @@ class TrainingAgent(BaseAgent):
             prism_data = self.normalize_data(prism_data)
 
         knowledge_base = (
-            "\n\n# Coach Knowledge:\n"
+            "<DOCUMENT_ACCESS_INSTRUCTIONS>\n"
+            "You have FULL access to the user's uploaded documents. The content from their documents "
+            "has been retrieved and is provided below. When the user asks about their documents, "
+            "reports, or files, reference and quote directly from the content provided. Never say "
+            "you cannot see, read, or access their documents — the document content is right here "
+            "for you to use.\n"
+            "</DOCUMENT_ACCESS_INSTRUCTIONS>\n\n"
+            "# Coach Knowledge:\n"
             + prism_data
-            + "\n---\n# User Documents:\n"
+            + "\n---\n"
+            "<USER_CASE_FILES>\n"
+            "The following content comes from the user's uploaded documents:\n\n"
             + result_data
+            + "\n</USER_CASE_FILES>"
         )
         system_data_prompt = self.system_prompt.format(knowledge_base=knowledge_base)
 
