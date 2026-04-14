@@ -22,12 +22,14 @@ went_wrong = "Something went wrong, please try again later"
 
 @cbv(dashboard_routes)
 class DashboardView:
-    @dashboard_routes.get("/organization/stats", response_model=dict)
+    @dashboard_routes.get("/organization/stats", response_model=dict,
+                          summary="Get organization statistics",
+                          description="Retrieve aggregated statistics for the user's organization(s).")
     def get_organization_statistics(
         self,
         user_data: dict = Depends(require_admin_role())
     ):
-        """Get organization-specific statistics"""
+        """Get organization-specific statistics."""
         try:
             user_id = user_data["sub"]
             user_role = user_data["user_role"]

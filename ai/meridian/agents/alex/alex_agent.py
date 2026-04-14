@@ -18,7 +18,7 @@ from prism_inspire.core.log_config import logger
 
 class AlexAgent(BaseAgent):
     """
-    Alex — The Student Success Advisor.
+    Meridian — The Student Success Advisor.
 
     Age-appropriate academic and career guidance for students from
     middle school through graduate programs.
@@ -41,7 +41,7 @@ class AlexAgent(BaseAgent):
     def get_capabilities(self) -> AgentCapability:
         return AgentCapability(
             agent_id=AgentId.ALEX,
-            name="Alex",
+            name="Meridian",
             tagline="The Student Success Advisor",
             domain=OrchestratorId.STRATEGIC_ADVISORY,
             actions=[
@@ -73,7 +73,7 @@ class AlexAgent(BaseAgent):
                 status=TaskStatus.FAILED,
                 output={"error": f"Unknown action: {task.action}"},
                 confidence=0.0,
-                reasoning=f"Action '{task.action}' is not supported by Alex",
+                reasoning=f"Action '{task.action}' is not supported by Meridian",
             )
 
         return await handler(task)

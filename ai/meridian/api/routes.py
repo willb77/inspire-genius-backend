@@ -34,7 +34,10 @@ def _get_service() -> MeridianService:
     return _service
 
 
-@meridian_routes.post("/chat")
+@meridian_routes.post("/chat", summary="Send a message to Meridian",
+                      description="Meridian classifies intent, routes to the appropriate domain "
+                                  "orchestrator, dispatches to specialist agents, and returns "
+                                  "a unified response.")
 async def chat(
     request: MeridianChatRequest,
     user_data: dict = Depends(verify_token),
@@ -85,7 +88,9 @@ async def chat(
         )
 
 
-@meridian_routes.get("/history")
+@meridian_routes.get("/history", summary="Get Meridian session history",
+                     description="Retrieve the conversation history for a Meridian session. "
+                                 "Individual agent identities are never exposed.")
 async def get_history(
     session_id: str,
     user_data: dict = Depends(verify_token),
@@ -136,7 +141,9 @@ async def get_history(
         )
 
 
-@meridian_routes.post("/feedback")
+@meridian_routes.post("/feedback", summary="Submit RLHF feedback",
+                      description="Submit feedback (thumbs-up/down, correction, flag) on a Meridian "
+                                  "response. Corrections become high-priority memory entries.")
 async def submit_feedback(
     request: MeridianFeedbackRequest,
     user_data: dict = Depends(verify_token),

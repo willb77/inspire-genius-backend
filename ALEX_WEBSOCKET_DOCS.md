@@ -1,8 +1,10 @@
-# Alex WebSocket API Documentation
+# Meridian WebSocket API Documentation
+
+> **Note:** Meridian was previously known as Alex during development. The WebSocket endpoint URLs retain `/alex-chat` for backward compatibility with existing clients.
 
 ## Overview
 
-Alex is the AI guide for the Prism platform. This document provides complete WebSocket API documentation for frontend integration, enabling real-time audio and text conversations with Alex.
+Meridian is the AI guide for the Prism platform. This document provides complete WebSocket API documentation for frontend integration, enabling real-time audio and text conversations with Meridian.
 
 ## WebSocket Connection
 
@@ -18,11 +20,11 @@ ws://localhost:8000/v1/agents/ws/alex-chat
 const socket = new WebSocket('ws://localhost:8000/v1/agents/ws/alex-chat');
 
 socket.onopen = function(event) {
-    console.log('Connected to Alex');
+    console.log('Connected to Meridian');
 };
 
 socket.onclose = function(event) {
-    console.log('Disconnected from Alex');
+    console.log('Disconnected from Meridian');
 };
 
 socket.onerror = function(error) {
@@ -36,12 +38,12 @@ socket.onerror = function(error) {
 
 #### 1. Text Message
 
-Send a text message to Alex for processing and response.
+Send a text message to Meridian for processing and response.
 
 ```javascript
 const textMessage = {
     type: "text",
-    text: "Hello Alex, what is the Prism platform?"
+    text: "Hello Meridian, what is the Prism platform?"
 };
 
 socket.send(JSON.stringify(textMessage));
@@ -92,7 +94,7 @@ socket.send(JSON.stringify(continuousMode));
 
 #### 1. Processing Status
 
-Indicates Alex is processing the request.
+Indicates Meridian is processing the request.
 
 ```javascript
 {
@@ -108,13 +110,13 @@ Transcribed text from audio input.
 ```javascript
 {
     type: "transcript",
-    text: "Hello Alex, what is the Prism platform?"
+    text: "Hello Meridian, what is the Prism platform?"
 }
 ```
 
 #### 3. Response Chunk (Streaming)
 
-Partial response text sent in real-time as Alex generates the response.
+Partial response text sent in real-time as Meridian generates the response.
 
 ```javascript
 {
@@ -126,7 +128,7 @@ Partial response text sent in real-time as Alex generates the response.
 
 #### 4. Complete Response
 
-Final complete text response from Alex.
+Final complete text response from Meridian.
 
 ```javascript
 {
@@ -199,7 +201,7 @@ socket.onmessage = function(event) {
 ### Basic Text Chat
 
 ```javascript
-class AlexTextChat {
+class MeridianTextChat {
     constructor() {
         this.socket = new WebSocket('ws://localhost:8000/v1/agents/ws/alex-chat');
         this.setupEventListeners();
@@ -207,7 +209,7 @@ class AlexTextChat {
 
     setupEventListeners() {
         this.socket.onopen = () => {
-            console.log('Connected to Alex');
+            console.log('Connected to Meridian');
         };
 
         this.socket.onmessage = (event) => {
@@ -245,7 +247,7 @@ class AlexTextChat {
 ### Advanced Audio + Text Chat
 
 ```javascript
-class AlexVoiceChat {
+class MeridianVoiceChat {
     constructor() {
         this.socket = new WebSocket('ws://localhost:8000/v1/agents/ws/alex-chat');
         this.audioContext = new AudioContext();
@@ -256,7 +258,7 @@ class AlexVoiceChat {
 
     setupEventListeners() {
         this.socket.onopen = () => {
-            console.log('Connected to Alex');
+            console.log('Connected to Meridian');
             // Activate continuous mode for best performance
             this.socket.send(JSON.stringify({ type: "start_continuous" }));
         };
@@ -355,7 +357,7 @@ class AlexVoiceChat {
 ### Real-time Streaming Chat
 
 ```javascript
-class AlexStreamingChat {
+class MeridianStreamingChat {
     constructor() {
         this.socket = new WebSocket('ws://localhost:8000/v1/agents/ws/alex-chat');
         this.currentResponse = '';
@@ -499,7 +501,7 @@ socket.onerror = function(error) {
     console.error('WebSocket error:', error);
     // Implement reconnection logic
     setTimeout(() => {
-        connectToAlex();
+        connectToMeridian();
     }, 3000);
 };
 
@@ -507,7 +509,7 @@ socket.onclose = function(event) {
     if (event.code !== 1000) {
         // Unexpected close - attempt reconnection
         setTimeout(() => {
-            connectToAlex();
+            connectToMeridian();
         }, 2000);
     }
 };
@@ -518,9 +520,9 @@ socket.onclose = function(event) {
 ```javascript
 // Handle error messages from server
 if (message.type === 'error') {
-    console.error('Alex error:', message.message);
+    console.error('Meridian error:', message.message);
     // Show user-friendly error message
-    showErrorToUser('Alex encountered an error. Please try again.');
+    showErrorToUser('Meridian encountered an error. Please try again.');
 }
 ```
 
@@ -581,4 +583,4 @@ if (message.type === 'response_chunk') {
 7. **Use real-time text mode** for instant responses when possible
 8. **Optimize audio settings** for best quality and performance
 
-This documentation provides everything needed to integrate Alex's AI chat functionality into your frontend application with full audio and text support.
+This documentation provides everything needed to integrate Meridian's AI chat functionality into your frontend application with full audio and text support.

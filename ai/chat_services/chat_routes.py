@@ -329,7 +329,8 @@ class ConversationPDFBuilder:
 @cbv(chat_routes)
 class ConversationView:
 
-    @chat_routes.post("/conversations")
+    @chat_routes.post("/conversations", summary="Create a conversation",
+                      description="Create a new conversation record for the authenticated user.")
     def create_conversation_api(
         self,
         request: CreateConversationRequest,
@@ -379,7 +380,9 @@ class ConversationView:
                 status_code=500
             )
 
-    @chat_routes.post("/sessions/start")
+    @chat_routes.post("/sessions/start", summary="Start or resume a chat session",
+                      description="Start a new conversation or resume an existing one. "
+                                  "Returns a conversation_id for use in WebSocket connections.")
     def start_session_api(
         self,
         request: StartSessionRequest,
@@ -499,7 +502,8 @@ class ConversationView:
                 status_code=500
             )
 
-    @chat_routes.get("/conversations")
+    @chat_routes.get("/conversations", summary="List conversations",
+                     description="Paginated list of the user's conversations with optional search and agent filter.")
     def get_conversations_api(
         self,
         page: int = Query(1, ge=1),
@@ -567,7 +571,8 @@ class ConversationView:
                 status_code=500
             )
 
-    @chat_routes.get("/conversations/{conversation_id}")
+    @chat_routes.get("/conversations/{conversation_id}", summary="Get a conversation",
+                     description="Retrieve a single conversation by ID.")
     def get_conversation_api(
         self, conversation_id: UUID, user_data: dict = Depends(verify_token)
     ):
@@ -620,7 +625,8 @@ class ConversationView:
                 status_code=500
             )
 
-    @chat_routes.delete("/conversations/{conversation_id}")
+    @chat_routes.delete("/conversations/{conversation_id}", summary="Delete a conversation",
+                        description="Soft-delete a conversation (marks as deleted, not physically removed).")
     def delete_conversation_api(
         self, conversation_id: UUID, user_data: dict = Depends(verify_token)
     ):
@@ -655,7 +661,8 @@ class ConversationView:
                 status_code=500
             )
 
-    @chat_routes.patch("/conversations/{conversation_id}")
+    @chat_routes.patch("/conversations/{conversation_id}", summary="Update conversation title",
+                       description="Rename an existing conversation.")
     def update_conversation_api(
         self,
         conversation_id: UUID,

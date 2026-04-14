@@ -301,7 +301,7 @@ def explore_careers(
     next_steps.append("Pick one career family above and research it this week.")
 
     logger.info(
-        f"Alex: career exploration for student {student_id} "
+        f"Meridian: career exploration for student {student_id} "
         f"(age_group={effective_age_group.value}, "
         f"prism={'yes' if behavioral_context and prism_eligible else 'no'})"
     )
@@ -391,7 +391,7 @@ def build_academic_plan(
         recommended_courses.append("Explore electives across different areas to discover new interests")
 
     logger.info(
-        f"Alex: built academic plan for student {student_id} "
+        f"Meridian: built academic plan for student {student_id} "
         f"(level={level}, {len(goals)} goals)"
     )
 

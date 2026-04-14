@@ -162,7 +162,9 @@ class UserInvitationHandler:
 
 @cbv(user_management_routes)
 class UserManagementView:
-    @user_management_routes.post("/invite", response_model=dict)
+    @user_management_routes.post("/invite", response_model=dict, summary="Invite a new user",
+                                  description="Admin-initiated user invitation. Creates a Cognito account, "
+                                              "stores an invitation record, and sends an SES email.")
     def invite_user(
         self,
         invite_request: UserInviteRequest,
@@ -353,7 +355,10 @@ class UserManagementView:
             )
 
 
-    @user_management_routes.post("/invitations/accept", response_model=dict)
+    @user_management_routes.post("/invitations/accept", response_model=dict,
+                                  summary="Accept user invitation",
+                                  description="Accept an invitation token, set a permanent password, "
+                                              "and activate the user account.")
     def accept_invitation(
         self,
         accept_request: InvitationAcceptRequest
@@ -531,7 +536,9 @@ class UserManagementView:
             )
 
 
-    @user_management_routes.get("/users", response_model=dict)
+    @user_management_routes.get("/users", response_model=dict, summary="List users with filters",
+                                 description="Paginated user list with filters for invitation status, "
+                                             "user status, role, organization, and search.")
     def list_users(
         self,
         organization_id: Optional[UUID] = Query(None, description="Filter by organization ID"),
@@ -646,7 +653,9 @@ class UserManagementView:
                 status_code=500
             )
 
-    @user_management_routes.delete("/users/{user_email}", response_model=dict)
+    @user_management_routes.delete("/users/{user_email}", response_model=dict,
+                                    summary="Delete a user by email",
+                                    description="Hard-delete unconfirmed users or soft-delete (deactivate) active users.")
     def delete_user(
         self,
         user_email: str = Path(..., description="Email of user to delete"),
@@ -701,15 +710,15 @@ class UserManagementView:
                 status_code=500
             )
 
-    @user_management_routes.post("/invite/bulk", response_model=dict)
+    @user_management_routes.post("/invite/bulk", response_model=dict,
+                                  summary="Bulk invite users",
+                                  description="Invite multiple users in a single request. Returns per-user success/failure details.")
     def bulk_invite_users(
         self,
         bulk_request: BulkUserInviteRequest,
         user_data: dict = Depends(require_admin_role())
     ):
-        """
-        Bulk user invitation - processes list of users with same parameters as single invite
-        """
+        """Bulk user invitation - processes list of users with same parameters as single invite."""
         try:
             successful_invitations = []
             failed_invitations = []
@@ -779,16 +788,15 @@ class UserManagementView:
                 status_code=500
             )
 
-    @user_management_routes.post("/invitations/{invitation_id}/resend", response_model=dict)
+    @user_management_routes.post("/invitations/{invitation_id}/resend", response_model=dict,
+                                  summary="Resend invitation email",
+                                  description="Regenerate the invitation token, extend expiration, and resend the email.")
     def resend_invitation(
         self,
         invitation_id: str = Path(..., description="Invitation ID to resend"),
         user_data: dict = Depends(require_admin_role())
     ):
-        """
-        Resend invitation email with new token and extended expiration
-        Hard deletes previous invitations for the same email
-        """
+        """Resend invitation email with new token and extended expiration."""
         try:
             # Regenerate invitation token
             token_result = regenerate_invitation_token(invitation_id, extend_days=3)
@@ -834,17 +842,17 @@ class UserManagementView:
                 status_code=500
             )
 
-    @user_management_routes.put("/users/{user_email}/edit", response_model=dict)
+    @user_management_routes.put("/users/{user_email}/edit", response_model=dict,
+                                 summary="Edit a user's details",
+                                 description="Update name, status, or role for an active user. "
+                                             "Cannot edit users with pending/expired invitations.")
     def edit_user(
         self,
         edit_request: UserEditRequest,
         user_email: str = Path(..., description="Email of user to edit"),
         user_data: dict = Depends(require_admin_role())
     ):
-        """
-        Edit active user details (name, status, role)
-        Cannot edit users with pending/expired/accepted invitations
-        """
+        """Edit active user details (name, status, role)."""
         try:
             fields_to_update = edit_request.model_dump(exclude_unset=True)
             result = edit_active_user(user_email, fields_to_update)
@@ -874,18 +882,15 @@ class UserManagementView:
             )
 
 
-@user_management_routes.put("/users/{user_id}/role", response_model=dict)
+@user_management_routes.put("/users/{user_id}/role", response_model=dict,
+                             summary="Change a user's role",
+                             description="Reassign a user to a different role. Super-admin only.")
 def change_user_role(
     role_request: ChangeUserRoleRequest,
     user_id: str = Path(..., description="User ID whose role to change"),
     user_data: dict = Depends(require_role("super-admin")),
 ):
-    """
-    Change a user's role (super-admin only).
-
-    PUT /v1/user-management/users/{user_id}/role
-    Body: { "role": "coach-admin" }
-    """
+    """Change a user's role (super-admin only)."""
     try:
         new_role_name = role_request.role.lower()
 

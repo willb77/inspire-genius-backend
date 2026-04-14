@@ -42,7 +42,8 @@ ACCESS_DENIED = "Access denied - you can only manage your organization"
 
 @cbv(organization_routes)
 class OrganizationManagementView:
-    @organization_routes.post("/", response_model=dict)
+    @organization_routes.post("/", response_model=dict, summary="Create an organization",
+                              description="Create a new organization with name, contact, type, and optional logo.")
     def create_organization(
         self,
         name: str = Form(..., description="Organization name", min_length=2, max_length=150),

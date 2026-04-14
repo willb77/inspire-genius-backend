@@ -61,8 +61,11 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "https://speech.pacewisdom.in")
 
 @cbv(user_auth_route)
 class SignupView:
-    @user_auth_route.post("/signup")
+    @user_auth_route.post("/signup", summary="Register a new user",
+                          description="Create a new user account via AWS Cognito and store in local DB. "
+                                      "Returns a next_step of 'verify_email' on success.")
     def post(self, signup_request: SignupRequest):
+        """Register a new user account with email and password."""
         try:
             # Check if user already exists
             existing_user = get_user_by_email(signup_request.email)
@@ -192,8 +195,10 @@ class SignupView:
 
 @cbv(user_auth_route)
 class VerifySignupView:
-    @user_auth_route.post("/verify-signup")
+    @user_auth_route.post("/verify-signup", summary="Verify email after signup",
+                          description="Confirm the OTP code sent to the user's email during registration.")
     def post(self, email: str, confirmation_code: str):
+        """Verify a new user's email address with the OTP confirmation code."""
         try:
             # Verify the user's email with Cognito
             # Use email as username for Cognito verification
@@ -260,8 +265,10 @@ class VerifySignupView:
 
 @cbv(user_auth_route)
 class ResendVerificationView:
-    @user_auth_route.post("/resend-verification")
+    @user_auth_route.post("/resend-verification", summary="Resend email verification code",
+                          description="Resend the OTP verification code to a user's email address.")
     def post(self, email: str):
+        """Resend the email verification code for an unverified account."""
         try:
             # Check if user exists
             user = get_user_by_email(email)
@@ -306,8 +313,11 @@ class ResendVerificationView:
 
 @cbv(user_auth_route)
 class LoginView:
-    @user_auth_route.post("/login")
+    @user_auth_route.post("/login", summary="Authenticate user",
+                          description="Login with email/password via AWS Cognito. Supports MFA (EMAIL_OTP) "
+                                      "verification flow. Returns JWT tokens on success.")
     def post(self, login_request: LoginRequest):
+        """Authenticate a user and return JWT tokens."""
         try:
             # Handle MFA verification if requested
             if login_request.verification:
@@ -591,8 +601,10 @@ class LoginView:
 
 @cbv(user_auth_route)
 class RefreshTokenView:
-    @user_auth_route.post("/refresh-token")
+    @user_auth_route.post("/refresh-token", summary="Refresh access token",
+                          description="Exchange a valid refresh token for a new access token.")
     def post(self, refresh_token_req: RefreshTokenRequest):
+        """Refresh an expired access token using a refresh token."""
         try:
             resp = refresh_token(refresh_token_req.refresh_token)
 
@@ -633,12 +645,11 @@ class RefreshTokenView:
 
 @cbv(user_auth_route)
 class SocialLoginView:
-    @user_auth_route.get("/social-auth/login/")
+    @user_auth_route.get("/social-auth/login/", summary="Initiate social login",
+                         description="Return the OAuth URL for Google or Facebook login via Cognito. "
+                                     "Frontend redirects the user to this URL.")
     def get(self, provider: str = Query(..., description="Social provider: google or facebook")):
-        """
-        Initiate social login with Google or Facebook via Cognito
-        Returns the OAuth URL for frontend to redirect to
-        """
+        """Initiate social login with Google or Facebook via Cognito."""
         try:
             provider = provider.capitalize()
 
@@ -684,12 +695,12 @@ class SocialLoginView:
 
 @cbv(user_auth_route)
 class SocialCallbackView:
-    @user_auth_route.get("/social-auth/callback")
+    @user_auth_route.get("/social-auth/callback", summary="OAuth callback handler",
+                         description="Handle the OAuth redirect from Cognito after social login. "
+                                     "Exchanges the authorization code for tokens and redirects "
+                                     "the user to the frontend with tokens in query params.")
     def get(self, code: str = None):
-        """
-        Handle OAuth callback from Cognito after social login
-        Always returns JSON response with tokens and user data
-        """
+        """Handle OAuth callback from Cognito after social login."""
         try:
             if not code:
                 logger.error("No authorization code provided in callback")
@@ -928,7 +939,8 @@ def _get_user_response_data(user_id: str) -> dict:
         ScopedSession.remove()
 
 
-@user_auth_route.get("/me")
+@user_auth_route.get("/me", summary="Get current user info",
+                     description="Return the authenticated user's profile, role, org, and onboarding status.")
 def get_me(user_data: dict = Depends(verify_token)):
     """
     Get authenticated user's info from access_token header.
@@ -976,7 +988,9 @@ def get_me(user_data: dict = Depends(verify_token)):
 
 @cbv(user_auth_route)
 class ResetPasswordView:
-    @user_auth_route.post("/request-password-reset")
+    @user_auth_route.post("/request-password-reset", summary="Request password reset",
+                          description="Send a password-reset email with a JWT link (15-min expiry). "
+                                      "Always returns success to avoid leaking account existence.")
     def request_password_reset(self, request: RequestPasswordResetRequest):
         """
         Step 1: Request password reset - sends email with JWT reset token
@@ -1034,7 +1048,8 @@ class ResetPasswordView:
                 status_code=500
             )
 
-    @user_auth_route.post("/reset-password")
+    @user_auth_route.post("/reset-password", summary="Complete password reset",
+                          description="Validate the JWT reset token from the email link and set a new password.")
     def reset_password(self, reset_request: ResetPasswordRequest):
         """
         Step 2: Complete password reset using JWT token from email
@@ -1135,7 +1150,9 @@ class ResetPasswordView:
                 status_code=500
             )
 
-    @user_auth_route.post("/change-password")
+    @user_auth_route.post("/change-password", summary="Change password (authenticated)",
+                          description="Change the current user's password. Requires the old password "
+                                      "and a new password. Only available for Cognito-based accounts.")
     def change_password(self, change_request: ChangePasswordRequest, user_data: dict = Depends(verify_token)):
         """
         Change password for authenticated users

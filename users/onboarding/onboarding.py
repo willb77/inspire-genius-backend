@@ -28,16 +28,14 @@ onboarding_route = APIRouter(
 
 @cbv(onboarding_route)
 class OnboardingView:
-    @onboarding_route.post("/profile")
+    @onboarding_route.post("/profile", summary="Create onboarding profile",
+                          description="Create the user's profile during onboarding (called after registration).")
     def create_profile(
         self,
         profile_request: OnboardingProfileRequest,
         user_data: dict = Depends(verify_token),
     ):
-        """
-        Create user profile during onboarding.
-        This endpoint should be called after user registration to complete the profile.
-        """
+        """Create user profile during onboarding."""
         try:
             user_id = user_data["sub"]
 
@@ -86,16 +84,14 @@ class OnboardingView:
                 status_code=500
             )
 
-    @onboarding_route.put("/profile")
+    @onboarding_route.put("/profile", summary="Update user profile",
+                         description="Partial or full update of the user's profile fields.")
     def update_profile(
         self,
         profile_request: ProfileUpdateRequest,
         user_data: dict = Depends(verify_token),
     ):
-        """
-        Update user profile.
-        Allows updating any of the profile fields individually or in combination.
-        """
+        """Update user profile fields individually or in combination."""
         try:
             user_id = user_data["sub"]
 

@@ -104,7 +104,7 @@ def get_frontend_texts(
 @frontend_text_routes.get("/audio-preview")
 async def preview_audio(
     accent_id: UUID = Query(..., description="Accent preference UUID (required)"),
-    tone_ids: Union[list[UUID], str] = Query(..., description="List of tone preference UUIDs (required)"),
+    tone_ids: Union[List[UUID], str] = Query(..., description="List of tone preference UUIDs (required)"),
     gender_id: UUID = Query(..., description="Gender preference UUID (required)"),
 ):
     """
@@ -249,6 +249,8 @@ def get_frontend_text_by_id_api(text_id: UUID):
         )
 
 
+# DEPRECATED: Tour narration moving to VoiceDeskAI external service — do not extend.
+# Kept functional for backward compatibility. Will be removed in a future release.
 @frontend_text_routes.get(
     "/{text_id}/audio-stream",
     responses={
@@ -303,6 +305,11 @@ async def stream_frontend_text_audio(text_id: UUID):
     Combines title and description with newline separator.
     No authentication required.
     """
+    logger.warning(
+        "DEPRECATED: GET /v1/frontend-text/%s/audio-stream is deprecated. "
+        "Tour narration is moving to VoiceDeskAI. This endpoint will be removed in a future release.",
+        text_id,
+    )
     try:
         # Get the frontend text from database
         frontend_text = get_frontend_text_by_id(text_id)
@@ -340,10 +347,11 @@ async def stream_frontend_text_audio(text_id: UUID):
                 filename=f"frontend_text_{text_id}_audio.pcm",
                 headers={
                     "Cache-Control": "public, max-age=86400",  # Cache for 24 hours
-                    "X-Content-Type-Options": "nosniff"
+                    "X-Content-Type-Options": "nosniff",
+                    "X-Deprecated": "true",
                 }
             )
-        
+
         logger.info(f"Generating new audio for frontend text {text_id}: {text_to_speak[:100]}...")
         
         # Generate audio using the stream_audio_chunks function
@@ -370,7 +378,8 @@ async def stream_frontend_text_audio(text_id: UUID):
             filename=f"frontend_text_{text_id}_audio.pcm",
             headers={
                 "Cache-Control": "public, max-age=86400",  # Cache for 24 hours
-                "X-Content-Type-Options": "nosniff"
+                "X-Content-Type-Options": "nosniff",
+                "X-Deprecated": "true",
             }
         )
 
