@@ -46,23 +46,20 @@ def get_device_id(client: Union[WebSocket, Request]) -> str:
 async def audio_transcription(audio_file):
     """
     Handles the transcription of audio data by sending it to the transcription service.
+
+    Delegates to the configured STT provider (default: OpenAI Whisper).
+    Set STT_PROVIDER=deepgram or STT_PROVIDER=auto to use Deepgram Nova-2.
     """
-    file = open(audio_file, "rb")
     try:
-        transcription = await openai.audio.transcriptions.create(
-            model="gpt-4o-transcribe", file=file, response_format="text"
-        )
-        if isinstance(transcription, str) and transcription.strip():
-            return transcription
-        elif isinstance(transcription, dict) and "text" in transcription:
-            return transcription["text"]
-        else:
-            return "Error: Empty or invalid transcription result"
+        from ai.audio_services.providers.provider_factory import AudioProviderFactory
+        stt = AudioProviderFactory.get_stt()
+        result = await stt.transcribe_file(audio_file)
+        if result.text.strip():
+            return result.text
+        return "Error: Empty or invalid transcription result"
     except Exception as e:
         print(f"Error: {e}")
         raise Exception(f"Can you please repeat that?")
-    finally:
-        file.close()
 
 
 async def generate_and_stream_response(
@@ -210,21 +207,22 @@ async def stream_and_capture_sentence_audio(
 async def stream_audio_chunks(sentence: str, voice="coral", instructions=alex_speech_instructions,
                                accent=DEFAULT_ACCENT, tone="Warm"):
     """
-    Async generator that yields TTS audio chunks from OpenAI API.
+    Async generator that yields TTS audio chunks from the configured TTS provider.
+
+    Delegates to the TTS provider (default: OpenAI gpt-4o-mini-tts).
     """
     try:
-        async with openai.audio.speech.with_streaming_response.create(
-            model="gpt-4o-mini-tts",
-            voice=voice,
-            instructions=instructions.format(accent=accent, tone=tone),
-            input=sentence,
-            response_format="wav",   # Could be "wav" if you want an audio container
-            speed=1,
-        ) as response:
-            async for chunk in response.iter_bytes(chunk_size=65536):
-                if chunk:
-                    yield chunk
-                    await asyncio.sleep(0.001)
+        from ai.audio_services.providers.provider_factory import AudioProviderFactory
+        tts = AudioProviderFactory.get_tts()
+        async for chunk in tts.synthesize_stream(
+            sentence,
+            voice_id=voice,
+            instructions=instructions,
+            accent=accent,
+            tone=tone,
+            response_format="wav",
+        ):
+            yield chunk
     except Exception as e:
         print(f"Error while generating TTS: {e}")
 

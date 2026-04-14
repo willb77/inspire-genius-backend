@@ -56,6 +56,7 @@ class CommunicationPreferences(BaseModel):
     voice_id: str = "coral"  # TTS voice (matches existing audio_services voices)
     accent: str = "US/English"
     tone: str = "Warm"
+    stt_provider: str = "openai"  # STT provider: openai | deepgram | auto
 
 
 class VoiceConfig:

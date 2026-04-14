@@ -68,6 +68,8 @@ from users.analytics.report_routes import report_routes
 from users.analytics.export_routes import export_routes
 # Meridian AI Mentor
 from ai.meridian.api.routes import meridian_routes as meridian_router
+# Voice provider configuration
+from ai.audio_services.voice_config_routes import voice_config_routes as voice_config_router
 
 
 _app_kwargs: dict = {
@@ -152,6 +154,8 @@ app.include_router(report_routes, prefix=settings.API_V1_STR, tags=["Reports"])
 app.include_router(export_routes, prefix=settings.API_V1_STR, tags=["Data Export"])
 # Meridian AI Mentor
 app.include_router(meridian_router, prefix=settings.API_V1_STR, tags=["Meridian AI Mentor"])
+# Voice provider configuration
+app.include_router(voice_config_router, prefix=settings.API_V1_STR, tags=["Voice Configuration"])
 
 # Startup and shutdown events for optimal performance
 @app.on_event("startup")

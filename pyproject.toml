@@ -44,7 +44,8 @@ dependencies = [
     "watchfiles (>=1.1.1,<2.0.0)",
     "google-genai (>=1.60.0,<2.0.0)",
     "pycryptodome (>=3.23.0,<4.0.0)",
-    "pytz (>=2025.2,<2026.0)"
+    "pytz (>=2025.2,<2026.0)",
+    "deepgram-sdk (>=3.7,<4.0)"
 ]
 
 [tool.poetry]
