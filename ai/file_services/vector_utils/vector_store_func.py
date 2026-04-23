@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import math
-from typing import Dict, List, Tuple
+import os
+from typing import Dict, List, Optional, Tuple
 
 from langchain_core.documents import Document
 from langchain_milvus import Milvus
@@ -13,6 +14,11 @@ from ai.file_services.vector_utils.parent_store import (
     get_parent_contents_sync,
 )
 from prism_inspire.core.log_config import logger
+
+
+def _use_pgvector() -> bool:
+    """Check if USE_PGVECTOR env var is set to 'true'."""
+    return os.environ.get("USE_PGVECTOR", "").lower() == "true"
 
 # Legacy FAISS functions - deprecated with Milvus migration
 # These functions are kept for backward compatibility but should not be used in new code
@@ -333,6 +339,48 @@ def get_similarity_search(
     Returns:
         String containing all search results with parent document content
     """
+    # ── pgvector path (USE_PGVECTOR=true) ──────────────────────────────
+    if _use_pgvector():
+        try:
+            import asyncio
+            from prism_inspire.core.pgvector_client import pgvector_client
+
+            pg_store = pgvector_client.get_store()
+            pg_filter = None
+            if file_ids:
+                pg_filter = {"file_ids": file_ids}
+
+            # Run async search from sync context
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+
+            if loop and loop.is_running():
+                # Already in an async context — use run_in_executor with new loop
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(
+                        asyncio.run,
+                        pg_store.similarity_search(
+                            query=query if isinstance(query, str) else query[0],
+                            k=k, filter=pg_filter, expr=filter,
+                        ),
+                    )
+                    all_matches = future.result(timeout=30)
+            else:
+                all_matches = asyncio.run(
+                    pg_store.similarity_search(
+                        query=query if isinstance(query, str) else query[0],
+                        k=k, filter=pg_filter, expr=filter,
+                    )
+                )
+            return _process_matches(all_matches, source)
+        except Exception as e:
+            logger.error("pgvector search failed, falling back to Milvus: %s", e)
+            # Fall through to Milvus path
+
+    # ── Milvus path (default) ────────────────────────────────────────
     if not vector_store:
         print("Vector store is not available.")
         return ""
@@ -382,6 +430,35 @@ async def get_similarity_search_async(
     Returns:
         String containing all search results with parent document content
     """
+    # ── pgvector path (USE_PGVECTOR=true) ──────────────────────────────
+    if _use_pgvector():
+        try:
+            from prism_inspire.core.pgvector_client import pgvector_client
+
+            pg_store = pgvector_client.get_store()
+            pg_filter = None
+            if file_ids:
+                pg_filter = {"file_ids": file_ids}
+            all_matches = await pg_store.similarity_search(
+                query=query if isinstance(query, str) else query[0],
+                k=k,
+                filter=pg_filter,
+                expr=filter,
+            )
+            # For multiple queries, run remaining queries and merge
+            if isinstance(query, list) and len(query) > 1:
+                for extra_q in query[1:]:
+                    extra = await pg_store.similarity_search(
+                        query=extra_q, k=k, filter=pg_filter, expr=filter,
+                    )
+                    all_matches.extend(extra)
+            data = await _process_matches_async(all_matches, source, report_str=report_str)
+            return data
+        except Exception as e:
+            logger.error("pgvector search failed, falling back to Milvus: %s", e)
+            # Fall through to Milvus path
+
+    # ── Milvus path (default) ────────────────────────────────────────
     if not vector_store:
         print("Vector store is not available.")
         return ""
