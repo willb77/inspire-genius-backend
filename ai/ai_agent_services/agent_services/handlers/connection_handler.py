@@ -5,7 +5,11 @@ import uuid
 from fastapi import WebSocket
 from jose import JWTError
 
-from ai.file_services.schema import get_report_str_for_files, get_filenames_for_files
+from ai.file_services.schema import (
+    get_report_str_for_files,
+    get_filenames_for_files,
+    get_full_text_for_file_ids,
+)
 
 # Constants
 DEFAULT_ACCENT = "US/English"
@@ -46,6 +50,11 @@ class ConnectionHandler:
         self.voice = "coral"
         self.report_str = {}
         self.filenames = ""
+        # Path 4: documents to be force-loaded as full text (not RAG-retrieved chunks).
+        # Populated from the WS init payload's `force_full_text_file_ids` field.
+        # Use case: two-document comparison demos where we cannot rely on top-k
+        # retrieval to surface the right chunks from both docs.
+        self.full_text_by_file_id = {}
 
     async def initialize(self):
         if self.agent_id == "alex":
@@ -170,6 +179,21 @@ class ConnectionHandler:
         except Exception as e:
             logger.error(f"Error loading report_str: {e}")
             self.report_str = {}
+
+        # Path 4: load full text for force-injected file_ids (subset of file_ids).
+        force_ids = initial_payload.get("force_full_text_file_ids", []) or []
+        if force_ids:
+            try:
+                self.full_text_by_file_id = await get_full_text_for_file_ids(
+                    force_ids, user_id=self.user_data["sub"]
+                )
+                logger.info(
+                    f"[prism-agent-{self.agent_id}] Force-loaded full text for "
+                    f"{len(self.full_text_by_file_id)}/{len(force_ids)} files"
+                )
+            except Exception as e:
+                logger.error(f"[prism-agent-{self.agent_id}] Force-full-text load failed: {e}")
+                self.full_text_by_file_id = {}
         prefs_task = asyncio.create_task(self._load_user_preferences_async())
 
         self._process_file_ids(file_ids)

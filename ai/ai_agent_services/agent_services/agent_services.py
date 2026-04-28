@@ -140,7 +140,14 @@ async def save_alex_message_async(
         logger.error(f"Error saving Alex message: {e}")
 
 
+# Two route registrations for the same handler:
+#   /v1/ws/agents/{agent_id}   — the canonical FastAPI route from initial commit
+#   /v1/agents/ws/{agent_id}   — alias used by the frontend `usePrismAgentWebSocket`
+#                                 hook and by the CDK CloudFront `/v1/agents/ws/*`
+#                                 behavior. Without this alias, the frontend's URL
+#                                 pattern returns 404 from the monolith.
 @agent_services.websocket("/ws/agents/{agent_id}")
+@agent_services.websocket("/agents/ws/{agent_id}")
 async def agent_chat(ws: WebSocket, agent_id: str):
     await ws.accept()
 

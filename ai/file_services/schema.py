@@ -353,14 +353,152 @@ async def get_filenames_for_files(file_ids: List[str], user_id: str) -> Dict[str
         session.close()
 
 
+# Path 4: token budget for force-loaded full document text. Keeps a single user's
+# combined documents from blowing out the LLM context window. Approx 4 chars/token
+# for English; 60k tokens ≈ 240k chars leaves comfortable headroom in a 1M-token
+# Gemini context for system prompt + user query + per-agent knowledge sections.
+FORCE_FULL_TEXT_TOKEN_BUDGET = 60000
+FORCE_FULL_TEXT_CHAR_BUDGET = FORCE_FULL_TEXT_TOKEN_BUDGET * 4
+
+
+async def get_full_text_for_file_ids(
+    file_ids: List[str],
+    user_id: str,
+    char_budget: int = FORCE_FULL_TEXT_CHAR_BUDGET,
+) -> Dict[str, str]:
+    """
+    Retrieve the FULL extracted text for the given file_ids by reassembling
+    parent chunks from the parent_ids table. Used by Path 4 force-injection
+    so the agent can reason over entire documents (e.g. for two-document
+    comparison) instead of only top-k retrieved chunks.
+
+    Strategy:
+      1. For each file_id, run a Milvus filter-only fetch via langchain-milvus
+         similarity_search with a generic query and a high `k` to gather all
+         chunk metadata. Filter by `file_id` AND `user_id` so a malicious or
+         accidental cross-tenant file_id cannot leak content.
+      2. Collect unique `parent_id` values from the returned chunk metadata.
+      3. Bulk-fetch the parent contents via `get_parent_contents_sync` (the
+         same path the existing RAG retrieval uses — proven, indexed, fast).
+      4. Concatenate parents in stable insertion order; truncate the per-file
+         result if combined output would exceed `char_budget` (with a clear
+         marker so the LLM knows the doc was truncated).
+
+    Args:
+        file_ids: List of `files.id` UUIDs to load in full.
+        user_id: Cognito sub / Magic-Auth UUID — used as a tenant scope on the
+                 Milvus filter so the user can only force-load their own files.
+        char_budget: Soft cap on combined output across all files. Defaults to
+                     FORCE_FULL_TEXT_CHAR_BUDGET (~60k tokens).
+
+    Returns:
+        Dict mapping file_id -> full text (truncated to budget if needed).
+        Returns {} if no file_ids supplied.
+    """
+    if not file_ids:
+        return {}
+
+    # Lazy imports to avoid circulars at module import time (the schema module
+    # is loaded before Milvus connection is initialized in some startup paths).
+    from prism_inspire.core.milvus_client import milvus_client
+    from ai.file_services.vector_utils.parent_store import get_parent_contents_sync
+
+    try:
+        store = milvus_client.get_store("users_db")
+    except Exception as e:
+        logger.error(f"[full-text] Failed to connect to Milvus: {e}")
+        return {}
+
+    out: Dict[str, str] = {}
+    remaining_budget = char_budget
+
+    for file_id in file_ids:
+        if remaining_budget <= 0:
+            logger.warning(
+                f"[full-text] Budget exhausted; skipping {file_id} and any later files"
+            )
+            break
+
+        # Tenant-scoped filter — file_id alone is insufficient because Milvus
+        # does not enforce ownership on its own.
+        expr = f'file_id == "{file_id}" && user_id == "{user_id}"'
+        try:
+            # k=500 covers all typical demo + assessment docs (<200 chunks);
+            # larger files will be partially captured and the tail truncated
+            # — better than a hard fail.
+            docs = await store.asimilarity_search(query=" ", k=500, expr=expr)
+        except AttributeError:
+            # Older langchain-milvus without async wrapper — fall back to sync
+            try:
+                docs = store.similarity_search(query=" ", k=500, expr=expr)
+            except Exception as e:
+                logger.error(f"[full-text] Milvus query failed for {file_id}: {e}")
+                continue
+        except Exception as e:
+            logger.error(f"[full-text] Milvus async query failed for {file_id}: {e}")
+            continue
+
+        # Dedupe parent_ids while preserving order (Python 3.7+ dict preserves insertion order)
+        parent_ids: List[str] = []
+        seen = set()
+        for d in docs:
+            pid = d.metadata.get("parent_id")
+            if pid is None:
+                continue
+            pid_str = str(pid)
+            if pid_str not in seen:
+                seen.add(pid_str)
+                parent_ids.append(pid_str)
+
+        if not parent_ids:
+            logger.info(f"[full-text] No parent chunks for {file_id} (user_id={user_id})")
+            continue
+
+        try:
+            parent_contents = get_parent_contents_sync(parent_ids)
+        except Exception as e:
+            logger.error(f"[full-text] Parent fetch failed for {file_id}: {e}")
+            continue
+
+        # Reassemble in insertion order (matches similarity-ordered fetch — close enough
+        # for an LLM that has the full content; we are NOT trying to preserve original
+        # document reading order here, just include all sections).
+        parts = [parent_contents[pid] for pid in parent_ids if pid in parent_contents]
+        full_text = "\n\n".join(parts)
+
+        # Apply per-file truncation against remaining budget
+        if len(full_text) > remaining_budget:
+            joined_len = len(full_text)  # already concatenated above
+            n_chunks = len(parts)
+            tokens_approx = remaining_budget // 4
+            truncated = full_text[:remaining_budget]
+            marker = (
+                "\n\n[...truncated at {chars} chars / ~{tokens} tokens — "
+                "original was {n} chunks ({total} chars). "
+                "Use chunked retrieval for the omitted sections.]"
+            ).format(chars=remaining_budget, tokens=tokens_approx, n=n_chunks, total=joined_len)
+            full_text = truncated + marker
+            remaining_budget = 0
+        else:
+            remaining_budget -= len(full_text)
+
+        out[file_id] = full_text
+        logger.info(
+            f"[full-text] Loaded file {file_id}: {len(parent_ids)} chunks, "
+            f"{len(full_text)} chars (budget remaining: {remaining_budget})"
+        )
+
+    return out
+
+
 async def get_report_str_for_files(file_ids: List[str]) -> Dict[str, str]:
     """
     Retrieve report_str for PRISM report files only.
     report_str only exists for files with category 'reports'.
-    
+
     Args:
         file_ids: List of file IDs to retrieve reports for
-        
+
     Returns:
         Dictionary mapping file_id -> report_str for report files only
     """

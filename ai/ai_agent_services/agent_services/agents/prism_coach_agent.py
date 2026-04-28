@@ -78,6 +78,30 @@ class PrismCoachAgent(BaseAgent):
         else:
             professional_knowledge_data = self.normalize_data(professional_knowledge_data)
 
+        # Path 4: optionally inject FULL document text for files explicitly
+        # listed in `force_full_text_file_ids` on the WS init payload.
+        # Used for demos / analysis tasks where two-document comparison
+        # requires both documents to be present in their entirety, not via
+        # top-k retrieval that may miss key sections.
+        force_full_text_section = ""
+        full_text_by_id = getattr(self.connection_handler, "full_text_by_file_id", {}) or {}
+        if full_text_by_id:
+            parts = [
+                "<FORCE_LOADED_DOCUMENTS>",
+                "These specific documents are provided below in their ENTIRETY — not as "
+                "retrieved chunks. When the user asks you to compare, contrast, summarize, "
+                "or analyze these documents, you have access to the full content. Cite "
+                "specific sections by document name when relevant.",
+                "",
+            ]
+            for fid, text in full_text_by_id.items():
+                fname = self.filenames.get(fid, fid) if isinstance(self.filenames, dict) else fid
+                parts.append(f"# Document: {fname} (id={fid})")
+                parts.append(text)
+                parts.append("")
+            parts.append("</FORCE_LOADED_DOCUMENTS>")
+            force_full_text_section = "\n".join(parts) + "\n\n"
+
         knowledge_base = (
             "<DOCUMENT_ACCESS_INSTRUCTIONS>\n"
             "You have FULL access to the user's uploaded documents. The content from their documents "
@@ -99,7 +123,9 @@ class PrismCoachAgent(BaseAgent):
             + professional_knowledge_data
             + "\n</INTERNAL_EXPERTISE>\n\n"
 
-            "<USER_CASE_FILES>\n"
+            + force_full_text_section
+
+            + "<USER_CASE_FILES>\n"
             "This section contains the specific documents, reports, and diaries of the user you are "
             "talking to. You CAN see and reference this content. Use it to provide personalized coaching.\n\n"
             + result_data
