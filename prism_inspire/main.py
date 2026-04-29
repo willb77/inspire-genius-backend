@@ -43,7 +43,10 @@ from users.onboarding.onboarding import onboarding_route
 from ai.agent_settings.onboarding import agents_settings as agents_settings_router
 from ai.file_services.file_service import file_service as file_service_router
 from ai.audio_services.audio_service import audio_service as audio_service_router
-from ai.ai_agent_services.agent_services.agent_services import agent_services as agent_services_router
+from ai.ai_agent_services.agent_services.agent_services import (
+    agent_services as agent_services_router,
+    agent_services_ws_alias as agent_services_ws_alias_router,
+)
 from ai.chat_services.chat_routes import chat_routes as chat_routes_router
 from users.organization.organization import organization_routes
 from users.license.license import license_routes
@@ -130,6 +133,7 @@ app.include_router(onboarding_route, prefix=settings.API_V1_STR, tags=["Onboardi
 app.include_router(agents_settings_router, prefix=settings.API_V1_STR, tags=["Agent Settings"])
 app.include_router(file_service_router, prefix=settings.API_V1_STR, tags=["File Service"])
 app.include_router(agent_services_router, prefix=settings.API_V1_STR, tags=["Agent Services"])
+app.include_router(agent_services_ws_alias_router, prefix=settings.API_V1_STR, tags=["Agent Services"])
 app.include_router(chat_routes_router, prefix=settings.API_V1_STR, tags=["Chat Management"])
 app.include_router(organization_routes, prefix=settings.API_V1_STR, tags=["Organization Management"])
 app.include_router(license_routes, prefix=settings.API_V1_STR, tags=["License Management"])
