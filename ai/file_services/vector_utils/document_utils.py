@@ -265,7 +265,27 @@ class DocumentProcessor:
                 encoding = detect_encoding(file_path)
                 loader = CSVLoader(str(file_path), encoding=encoding)
             elif extension in self.SUPPORTED_EXCEL_EXTENSIONS:
-                loader = UnstructuredExcelLoader(str(file_path))
+                # pandas-based extractor: preserves row/column structure as
+                # CSV-like text, one Document per sheet. UnstructuredExcelLoader
+                # collapses cells into a flat word list which loses positional
+                # context (numbers detached from row/column labels).
+                sheets = pd.read_excel(file_path, sheet_name=None, dtype=str)
+                xlsx_documents = []
+                for sheet_name, df in sheets.items():
+                    df = df.fillna("")
+                    body = df.to_csv(index=False)
+                    text = f"## Sheet: {sheet_name}\n\n{body}"
+                    xlsx_documents.append(
+                        Document(
+                            page_content=text,
+                            metadata={
+                                "source": str(file_path),
+                                "sheet": sheet_name,
+                            },
+                        )
+                    )
+                all_documents.extend(xlsx_documents)
+                continue
             else:
                 supported_formats = (
                     self.SUPPORTED_TEXT_EXTENSIONS
