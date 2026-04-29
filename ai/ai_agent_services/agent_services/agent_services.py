@@ -27,6 +27,12 @@ agent_services = APIRouter(
     tags=["Agent Services"],
 )
 
+# Sibling router with no prefix — used to register the WS alias at
+# /v1/ws/agents/{agent_id} which avoids the CloudFront `/v1/agents/*`
+# behavior (that one targets API Gateway → ws-proxy → agent-engine,
+# which the monolith demo path must not traverse).
+agent_services_ws_alias = APIRouter(tags=["Agent Services"])
+
 
 def get_agent_logic(agent_id: str, connection_handler: ConnectionHandler):
     if agent_id == "alex":
@@ -141,13 +147,15 @@ async def save_alex_message_async(
 
 
 # Two route registrations for the same handler:
-#   /v1/ws/agents/{agent_id}   — the canonical FastAPI route from initial commit
-#   /v1/agents/ws/{agent_id}   — alias used by the frontend `usePrismAgentWebSocket`
-#                                 hook and by the CDK CloudFront `/v1/agents/ws/*`
-#                                 behavior. Without this alias, the frontend's URL
-#                                 pattern returns 404 from the monolith.
-@agent_services.websocket("/ws/agents/{agent_id}")
-@agent_services.websocket("/agents/ws/{agent_id}")
+#   /v1/agents/ws/{agent_id}   — original path (matches CloudFront `/v1/agents/*`
+#                                 behavior → API Gateway). Kept for the agent-engine
+#                                 / ecosystem path.
+#   /v1/ws/agents/{agent_id}   — alias on a sibling router so it falls outside the
+#                                 `/v1/agents/*` CloudFront behavior and lands on the
+#                                 default origin (EC2 monolith). Used by the frontend
+#                                 in monolith mode.
+@agent_services_ws_alias.websocket("/ws/agents/{agent_id}")
+@agent_services.websocket("/ws/{agent_id}")
 async def agent_chat(ws: WebSocket, agent_id: str):
     await ws.accept()
 
