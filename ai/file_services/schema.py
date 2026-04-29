@@ -401,7 +401,16 @@ async def get_full_text_for_file_ids(
     # Lazy imports to avoid circulars at module import time (the schema module
     # is loaded before Milvus connection is initialized in some startup paths).
     from prism_inspire.core.milvus_client import milvus_client
-    from ai.file_services.vector_utils.parent_store import get_parent_contents_sync
+    from ai.file_services.vector_utils.parent_store import (
+        get_async_parent_retriever_instance,
+    )
+
+    # IMPORTANT: call the async retriever directly. The sync wrapper spawns a
+    # new event loop in a thread which breaks the asyncpg pool (pools are
+    # bound to a single event loop) and produces "ConnectionDoesNotExistError
+    # / another operation is in progress" cascades. We are already in async
+    # context — just await the coroutine.
+    retriever = get_async_parent_retriever_instance()
 
     try:
         store = milvus_client.get_store("users_db")
@@ -455,7 +464,7 @@ async def get_full_text_for_file_ids(
             continue
 
         try:
-            parent_contents = get_parent_contents_sync(parent_ids)
+            parent_contents = await retriever.get_parent_contents(parent_ids)
         except Exception as e:
             logger.error(f"[full-text] Parent fetch failed for {file_id}: {e}")
             continue
