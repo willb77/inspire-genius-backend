@@ -265,25 +265,47 @@ class DocumentProcessor:
                 encoding = detect_encoding(file_path)
                 loader = CSVLoader(str(file_path), encoding=encoding)
             elif extension in self.SUPPORTED_EXCEL_EXTENSIONS:
-                # pandas-based extractor: preserves row/column structure as
-                # CSV-like text, one Document per sheet. UnstructuredExcelLoader
-                # collapses cells into a flat word list which loses positional
-                # context (numbers detached from row/column labels).
-                sheets = pd.read_excel(file_path, sheet_name=None, dtype=str)
+                # openpyxl cell-by-cell extractor: walks every cell in every
+                # sheet preserving original row/column alignment. Title cells
+                # in row 1 stay in row 1 (pandas misreads them as headers).
+                # Empty rows are dropped; tab-separated to keep column anchors
+                # intact for the LLM. UnstructuredExcelLoader collapses cells
+                # into a flat word list — pandas with default header inference
+                # mangles spreadsheets with title rows.
+                from openpyxl import load_workbook
+
+                wb = load_workbook(
+                    str(file_path), data_only=True, read_only=True
+                )
                 xlsx_documents = []
-                for sheet_name, df in sheets.items():
-                    df = df.fillna("")
-                    body = df.to_csv(index=False)
-                    text = f"## Sheet: {sheet_name}\n\n{body}"
-                    xlsx_documents.append(
-                        Document(
-                            page_content=text,
-                            metadata={
-                                "source": str(file_path),
-                                "sheet": sheet_name,
-                            },
-                        )
-                    )
+                try:
+                    for sheet_name in wb.sheetnames:
+                        ws = wb[sheet_name]
+                        lines = [f"## Sheet: {sheet_name}"]
+                        for row in ws.iter_rows(values_only=True):
+                            if all(
+                                c is None
+                                or (isinstance(c, str) and not c.strip())
+                                for c in row
+                            ):
+                                continue
+                            lines.append(
+                                "\t".join(
+                                    "" if c is None else str(c) for c in row
+                                )
+                            )
+                        if len(lines) > 1:
+                            xlsx_documents.append(
+                                Document(
+                                    page_content="\n".join(lines),
+                                    metadata={
+                                        "source": str(file_path),
+                                        "sheet": sheet_name,
+                                    },
+                                )
+                            )
+                finally:
+                    wb.close()
                 all_documents.extend(xlsx_documents)
                 continue
             else:
