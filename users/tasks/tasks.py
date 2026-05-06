@@ -21,14 +21,17 @@ from __future__ import annotations
 
 import os
 import time
+import uuid
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from prism_inspire.core.log_config import logger
+from prism_inspire.db.session import SessionLocal
 from users.auth import verify_token
+from users.models.task_result import TaskResult
 
 
 task_routes = APIRouter(prefix="/tasks", tags=["Task Agents"])
@@ -261,3 +264,118 @@ async def task_document_research(
     return await _proxy_to_agent_engine(
         "document-research", body.model_dump(), user_data, response,
     )
+
+
+# ─── Save-to-workspace endpoint (E3.4 follow-up) ─────────────────
+
+
+class SaveTaskResultRequest(BaseModel):
+    task_slug: str = Field(..., min_length=1, max_length=64)
+    agent_id: str = Field(..., min_length=1, max_length=64)
+    request_payload: dict
+    result_payload: dict
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    title: Optional[str] = Field(default=None, max_length=255)
+    note: Optional[str] = Field(default=None, max_length=2000)
+
+
+class SavedTaskResultRow(BaseModel):
+    id: str
+    task_slug: str
+    agent_id: str
+    title: Optional[str]
+    confidence: Optional[float]
+    created_at: str
+
+
+def _user_uuid_from_claims(user_data: dict) -> uuid.UUID:
+    sub = user_data.get("sub", "")
+    if not sub:
+        raise HTTPException(status_code=401, detail="Missing user identity")
+    try:
+        return uuid.UUID(sub)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid user identity")
+
+
+@task_routes.post("/results", response_model=SavedTaskResultRow)
+def save_task_result(
+    body: SaveTaskResultRequest,
+    user_data: dict = Depends(verify_token),
+) -> dict:
+    """Persist a task-agent result for later viewing in the workspace.
+
+    The frontend calls this after a successful task run when the user
+    presses "Save to my workspace" on the result card.
+    """
+    if body.task_slug not in _TASK_TO_AGENT:
+        raise HTTPException(status_code=400, detail=f"Unknown task slug: {body.task_slug}")
+
+    user_id = _user_uuid_from_claims(user_data)
+    org_id_raw = user_data.get("org_id") or user_data.get("organization_id")
+    org_id: Optional[uuid.UUID] = None
+    if org_id_raw:
+        try:
+            org_id = uuid.UUID(str(org_id_raw))
+        except (ValueError, TypeError):
+            org_id = None
+
+    session = SessionLocal()
+    try:
+        row = TaskResult(
+            user_id=user_id,
+            org_id=org_id,
+            task_slug=body.task_slug,
+            agent_id=body.agent_id,
+            request_payload=body.request_payload,
+            result_payload=body.result_payload,
+            confidence=body.confidence,
+            title=body.title,
+            note=body.note,
+        )
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return {
+            "id": str(row.id),
+            "task_slug": row.task_slug,
+            "agent_id": row.agent_id,
+            "title": row.title,
+            "confidence": row.confidence,
+            "created_at": row.created_at.isoformat() if row.created_at else "",
+        }
+    except Exception as exc:
+        session.rollback()
+        logger.exception("save_task_result failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to save task result")
+    finally:
+        session.close()
+
+
+@task_routes.get("/results", response_model=list[SavedTaskResultRow])
+def list_task_results(
+    user_data: dict = Depends(verify_token),
+    task_slug: Optional[str] = Query(default=None, max_length=64),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[dict]:
+    """List saved task results for the calling user (most-recent first)."""
+    user_id = _user_uuid_from_claims(user_data)
+    session = SessionLocal()
+    try:
+        q = session.query(TaskResult).filter(TaskResult.user_id == user_id)
+        if task_slug:
+            q = q.filter(TaskResult.task_slug == task_slug)
+        rows = q.order_by(TaskResult.created_at.desc()).limit(limit).all()
+        return [
+            {
+                "id": str(r.id),
+                "task_slug": r.task_slug,
+                "agent_id": r.agent_id,
+                "title": r.title,
+                "confidence": r.confidence,
+                "created_at": r.created_at.isoformat() if r.created_at else "",
+            }
+            for r in rows
+        ]
+    finally:
+        session.close()
