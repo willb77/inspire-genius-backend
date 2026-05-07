@@ -17,9 +17,11 @@ from users.models.user import (
     OrganizationAgent, UserInvitation,
     InvitationStatusEnum
 )
+from users.models.task_result import TaskResult
 
 
 __all__ = [
+    "TaskResult",
     "Base",
     "Users", "Organization",
     "UserProfile", "OrganizationAdmin",
