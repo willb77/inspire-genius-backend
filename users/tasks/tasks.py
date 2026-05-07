@@ -53,13 +53,17 @@ _AGENT_ENGINE_TIMEOUT_SECONDS = float(
     os.environ.get("AGENT_ENGINE_TASK_TIMEOUT", "60")
 )
 
-# Per-agent feature flags. Default off — flip to "1" to enable.
+# Per-agent kill-switch. Default ON. The agent-engine enforces access
+# control via _AGENT_ALLOWED_ROLES (single source of truth); the monolith
+# just proxies. Set ENABLE_TASK_AGENT_<NAME>=0 to force-disable an agent
+# without redeploying the agent-engine — flips to 503 in <60s on EC2 .env
+# reload.
 _FEATURE_FLAGS = {
-    "maven":  os.environ.get("ENABLE_TASK_AGENT_MAVEN",  "0") == "1",
-    "james":  os.environ.get("ENABLE_TASK_AGENT_JAMES",  "0") == "1",
-    "atlas":  os.environ.get("ENABLE_TASK_AGENT_ATLAS",  "0") == "1",
-    "forge":  os.environ.get("ENABLE_TASK_AGENT_FORGE",  "0") == "1",
-    "sage":   os.environ.get("ENABLE_TASK_AGENT_SAGE",   "0") == "1",
+    "maven":  os.environ.get("ENABLE_TASK_AGENT_MAVEN",  "1") != "0",
+    "james":  os.environ.get("ENABLE_TASK_AGENT_JAMES",  "1") != "0",
+    "atlas":  os.environ.get("ENABLE_TASK_AGENT_ATLAS",  "1") != "0",
+    "forge":  os.environ.get("ENABLE_TASK_AGENT_FORGE",  "1") != "0",
+    "sage":   os.environ.get("ENABLE_TASK_AGENT_SAGE",   "1") != "0",
 }
 
 
@@ -143,12 +147,12 @@ async def _proxy_to_agent_engine(
 ) -> dict:
     agent_id, path = _TASK_TO_AGENT[task_slug]
 
-    if not _FEATURE_FLAGS.get(agent_id, False):
+    if not _FEATURE_FLAGS.get(agent_id, True):
         raise HTTPException(
             status_code=503,
             detail=(
-                f"Task agent '{agent_id}' is disabled. "
-                f"Set ENABLE_TASK_AGENT_{agent_id.upper()}=1 to enable."
+                f"Task agent '{agent_id}' is disabled by ENABLE_TASK_AGENT_{agent_id.upper()}=0. "
+                f"Unset or change to 1 to re-enable."
             ),
         )
 
