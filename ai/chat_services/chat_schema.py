@@ -281,7 +281,32 @@ def add_message_to_conversation(
     audio_bytes: bytes = None,
     audio_filename: str = None,
 ):
-    """Add a new message to a conversation."""
+    """Add a new message to a conversation.
+
+    Phase D R3 (2026-05-08) — chat_message writer migration. The canonical
+    writer is now ``services/agent-engine/app/repositories/chat_message_repository.py``
+    on the agent-engine. This monolith path remains for backwards-compat
+    during the canary window and is gated by ``MONOLITH_CHAT_WRITER_ENABLED``.
+
+    When ``MONOLITH_CHAT_WRITER_ENABLED`` is ``"false"``/``"0"``/``"no"`` the
+    writer becomes a no-op (returns ``None``) so that production WebSocket
+    flows that still route to the monolith do not double-write rows that
+    are now owned by the agent-engine. Default is ``"true"`` until the
+    24h canary closes; the follow-up PR flips the default to ``"false"``
+    and removes this function entirely.
+    """
+    monolith_writer_enabled = os.environ.get(
+        "MONOLITH_CHAT_WRITER_ENABLED", "true"
+    ).strip().lower()
+    if monolith_writer_enabled in ("false", "0", "no"):
+        logger.debug(
+            "monolith chat writer disabled (MONOLITH_CHAT_WRITER_ENABLED=%s) — "
+            "skipping insert for conversation_id=%s",
+            monolith_writer_enabled,
+            conversation_id,
+        )
+        return None
+
     try:
         session = ScopedSession()
 
