@@ -655,16 +655,23 @@ class UserManagementView:
 
     @user_management_routes.delete("/users/{user_email}", response_model=dict,
                                     summary="Delete a user by email",
-                                    description="Hard-delete unconfirmed users or soft-delete (deactivate) active users.")
+                                    description="Hard-delete unconfirmed users or soft-delete (deactivate) active users. "
+                                                "Pass ?force=true to hard-delete (purge) a user that is already soft-deleted.")
     def delete_user(
         self,
         user_email: str = Path(..., description="Email of user to delete"),
+        force: bool = Query(
+            False,
+            description="If true, hard-delete a user that is already soft-deleted. "
+                        "Use for the Purge Inactive flow.",
+        ),
         user_data: dict = Depends(require_admin_role())
     ):
         """
         Delete user with different logic based on status:
         - If user is not confirmed (invitation pending/expired): Hard delete from database
         - If user is active: Soft delete (set is_deleted = True)
+        - If user is already soft-deleted and force=true: Hard delete (purge)
         """
         try:
             # Check organization access if needed
@@ -684,7 +691,7 @@ class UserManagementView:
                 ScopedSession.remove()
 
                 # Perform deletion
-            result = delete_user_by_email(user_email)
+            result = delete_user_by_email(user_email, force=force)
 
             if result["success"]:
                 return create_response(
@@ -709,6 +716,75 @@ class UserManagementView:
                 status=False,
                 status_code=500
             )
+
+    @user_management_routes.post(
+        "/users/purge-inactive",
+        response_model=dict,
+        summary="Purge all inactive (soft-deleted) users",
+        description="Hard-delete every user whose `is_deleted` flag is True. "
+                    "Returns per-email success/failure. Super-admin only.",
+    )
+    def purge_inactive_users(
+        self,
+        user_data: dict = Depends(require_role("super-admin")),
+    ):
+        """Iterate every soft-deleted user and call delete_user_by_email(force=True)."""
+        session = ScopedSession()
+        succeeded: list[str] = []
+        failed: list[dict] = []
+        try:
+            inactive_users = (
+                session.query(Users)
+                .filter(Users.is_deleted.is_(True))
+                .all()
+            )
+            inactive_emails = [u.email for u in inactive_users]
+        except Exception as e:
+            logger.error(f"Error listing inactive users for purge: {e}")
+            return create_response(
+                error_code=SOMETHING_WENT_WRONG,
+                message="Failed to enumerate inactive users.",
+                status=False,
+                status_code=500,
+            )
+        finally:
+            session.close()
+            ScopedSession.remove()
+
+        for email in inactive_emails:
+            try:
+                result = delete_user_by_email(email, force=True)
+                if result.get("success"):
+                    succeeded.append(email)
+                else:
+                    failed.append({
+                        "email": email,
+                        "reason": result.get("message", "unknown"),
+                    })
+            except Exception as e:
+                logger.error(f"Purge failed for {email}: {e}")
+                failed.append({"email": email, "reason": str(e)})
+
+        actor_email = user_data.get("email") if isinstance(user_data, dict) else None
+        logger.info(
+            f"Purge inactive complete: total={len(inactive_emails)} "
+            f"succeeded={len(succeeded)} failed={len(failed)} "
+            f"actor={actor_email}"
+        )
+
+        return create_response(
+            message=(
+                f"Purged {len(succeeded)} inactive user(s); "
+                f"{len(failed)} failed."
+            ),
+            error_code=SUCCESS_CODE,
+            status=True,
+            data={
+                "succeeded": succeeded,
+                "failed": failed,
+                "total": len(inactive_emails),
+            },
+        )
 
     @user_management_routes.post("/invite/bulk", response_model=dict,
                                   summary="Bulk invite users",

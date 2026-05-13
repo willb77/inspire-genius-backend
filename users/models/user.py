@@ -340,7 +340,9 @@ class OrganizationAgent(Base):
         ForeignKey("agents.id", ondelete="CASCADE"),
         nullable=False
     )
-    assigned_by = Column(UUID(as_uuid=True), ForeignKey(USER_ID))
+    # P0-1: ON DELETE SET NULL so super-admin can purge inactive assigners.
+    # See migration a7b8c9d0e1f2.
+    assigned_by = Column(UUID(as_uuid=True), ForeignKey(USER_ID, ondelete="SET NULL"))
     assigned_at = Column(DateTime(timezone=True), default=func.now())
     is_active = Column(Boolean, default=True)
     # Agent preferences

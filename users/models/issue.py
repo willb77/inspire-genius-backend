@@ -70,7 +70,13 @@ class Issue(Base):
     )
     
     # Related entities
-    reported_by = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
+    # P0-1: nullable + ON DELETE SET NULL so super-admin can purge inactive
+    # reporters without FK violations. See migration a7b8c9d0e1f2.
+    reported_by = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.user_id", ondelete="SET NULL"),
+        nullable=True,
+    )
     agent_id = Column(UUID(as_uuid=True), nullable=True)  # Reference to agent (may not be FK if agents are external)
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organization.id"), nullable=True)
     business_id = Column(UUID(as_uuid=True), ForeignKey("business.id"), nullable=True)

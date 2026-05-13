@@ -738,14 +738,22 @@ def get_users_with_invitation_details(
         ScopedSession.remove()
 
 
-def delete_user_by_email(email: str) -> dict:
+def delete_user_by_email(email: str, force: bool = False) -> dict:
     """
     Delete user with different logic based on status:
     - If user is not confirmed (invitation pending/expired): Hard delete from database
-    - If user is active: Soft delete (set is_deleted = True)
+    - If user is active: Soft delete (set is_deleted = True) + disable in Cognito
+    - If user is already soft-deleted and `force=True`: Hard delete (purge)
+    - If user is already soft-deleted and `force=False`: Refuse (legacy behaviour)
+
+    The `force=True` branch is the path used by the Purge Inactive Users flow
+    (P0-1 fix, 2026-05-13). It expects FK columns referencing `users.user_id`
+    to either cascade or be set NULL via the companion Alembic migration on
+    `issues.reported_by` and `organization_agents.assigned_by`.
 
     Args:
         email: Email address of user to delete
+        force: If True, hard-delete users whose `is_deleted` is already True
 
     Returns:
         Dict with success status, message, and data
@@ -753,7 +761,7 @@ def delete_user_by_email(email: str) -> dict:
     session = ScopedSession()
     try:
         # Check if user exists
-        
+
         user = (
             session.query(Users)
             .options(joinedload(Users.profile))
@@ -810,8 +818,8 @@ def delete_user_by_email(email: str) -> dict:
                     "user_was_active": True
                 }
             }
-        
-        if user.is_deleted:
+
+        if user.is_deleted and not force:
             return {
                 "success": False,
                 "message": f"User {email} is already deactivated",
@@ -821,8 +829,26 @@ def delete_user_by_email(email: str) -> dict:
                 }
             }
 
-        if pending_invitation:
-            # Hard delete
+        # Hard-delete path: pending invitation OR force-purge of soft-deleted user
+        if pending_invitation or (user.is_deleted and force):
+            user_id = user.user_id
+
+            # Best-effort: ensure Cognito is disabled BEFORE row deletion so
+            # the user cannot exchange tokens even if the DB delete fails.
+            try:
+                cognito_username = get_cognito_username_by_user_id(user_id)
+                if cognito_username:
+                    update_cognito_user_attributes(
+                        cognito_username, {'is_active': False}
+                    )
+                    logger.info(
+                        f"Disabled user {email} in Cognito before hard-delete"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to disable {email} in Cognito before purge: {e}"
+                )
+
             if user.profile:
                 session.delete(user.profile)
 
@@ -841,15 +867,18 @@ def delete_user_by_email(email: str) -> dict:
                 logger.warning(f"Failed to delete user {email} from Cognito: {e}")
 
             session.commit()
+
+            deletion_type = "force_purge" if (user.is_deleted and force) else "hard_delete"
             return {
                 "success": True,
-                "message": f"User {email} permanently deleted (unconfirmed user)",
+                "message": f"User {email} permanently deleted",
                 "data": {
                     "email": email,
-                    "deletion_type": "hard_delete",
+                    "deletion_type": deletion_type,
                     "user_was_active": False,
                     "had_pending_invitation": pending_invitation is not None,
-                    "cognito_deleted": cognito_deleted
+                    "cognito_deleted": cognito_deleted,
+                    "forced": bool(force),
                 }
             }
 
