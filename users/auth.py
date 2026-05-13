@@ -1,6 +1,7 @@
 from jose import jwt, JWTError, jwk
 import requests
 import base64
+import time
 from fastapi import Header, HTTPException
 from datetime import datetime, timedelta, timezone
 from prism_inspire.core.log_config import logger
@@ -25,6 +26,107 @@ SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = "HS256"
 
 JWKS = requests.get(JWKS_URL).json()
+
+
+# ────────────────────────────────────────────────────────────────────────
+# Canonical-sub remap for Magic-Auth users
+# ────────────────────────────────────────────────────────────────────────
+#
+# Magic-Auth runs against a separate Aurora DB (`inspires_genius` with an
+# underscore variant) whose `magic_auth.users` table mints its own UUIDs
+# per email. The monolith app, however, writes FKs against
+# `inspire_genius.public.users.user_id`. When a Magic-Auth-authenticated
+# request hits the monolith carrying its Magic-Auth `sub`, any DB write
+# with that sub as a user_id (chat messages, file uploads, etc.) silently
+# rolls back with ForeignKeyViolationError — the user sees "success" in
+# the UI but no row persists.
+#
+# This was fixed for the Agent Engine in PR #93 via `_resolve_canonical_sub`.
+# We mirror the same fix here for the monolith. Cognito-authenticated
+# tokens are unaffected: their JWT sub is already the canonical
+# `public.users.user_id` by construction (admin_create_user records the
+# Cognito UserSub).
+#
+# Email-keyed TTL cache (10 min, soft cap 4096) — avoids a DB hit on every
+# request. Cache key is the lowercased email; value is (canonical_sub,
+# expires_at). Misses leave the sub unchanged (defensive default — better
+# to fail visibly than to swap sub silently to None).
+_SUB_CACHE: dict = {}
+_SUB_CACHE_TTL = 600.0
+_SUB_CACHE_MAX = 4096
+
+
+def _resolve_canonical_sub(claims: dict) -> None:
+    """Rewrite ``claims['sub']`` to ``public.users.user_id`` keyed by email.
+
+    Only invoked for Magic-Auth claims. No-op when the email isn't in
+    ``public.users`` (defensive — leave sub alone rather than nullify).
+    Idempotent: when ``claims['sub']`` already matches the canonical id,
+    the rewrite is a no-op string assignment.
+
+    Run as a side effect on the claims dict — matches the agent-engine
+    pattern for symmetry across services.
+    """
+    email = (claims.get("email") or "").strip().lower()
+    if not email:
+        return
+
+    now = time.monotonic()
+    cached = _SUB_CACHE.get(email)
+    if cached and cached[1] > now:
+        canonical = cached[0]
+        if claims.get("sub") != canonical:
+            logger.info(
+                "Remapping sub via cache for %s: %s -> %s",
+                email, claims.get("sub"), canonical,
+            )
+        claims["sub"] = canonical
+        return
+
+    # Lookup against public.users. Imports are local to keep this function
+    # callable from contexts where the DB session module isn't initialised
+    # yet (test stubs, cold-start before SQLAlchemy engine creation).
+    try:
+        from prism_inspire.db.session import ScopedSession
+        from users.models.user import Users
+
+        session = ScopedSession()
+        try:
+            user = (
+                session.query(Users.user_id)
+                .filter(Users.email == email)
+                .first()
+            )
+        finally:
+            session.close()
+            ScopedSession.remove()
+    except Exception as exc:
+        logger.warning(
+            "Canonical sub lookup failed for %s (leaving sub unchanged): %s",
+            email, exc,
+        )
+        return
+
+    if user is None:
+        # Email not in public.users — could be a Magic-Auth-only user that
+        # was never provisioned through the invite flow. Nothing we can do
+        # safely; leave the sub alone so downstream FK checks surface the
+        # mismatch instead of silently swapping in a NULL.
+        return
+
+    canonical = str(user[0])
+    if claims.get("sub") != canonical:
+        logger.info(
+            "Remapping sub for %s: %s -> %s",
+            email, claims.get("sub"), canonical,
+        )
+
+    if len(_SUB_CACHE) >= _SUB_CACHE_MAX:
+        # Drop oldest half — coarse but bounds memory without LRU bookkeeping.
+        for k in list(_SUB_CACHE)[: _SUB_CACHE_MAX // 2]:
+            _SUB_CACHE.pop(k, None)
+    _SUB_CACHE[email] = (canonical, now + _SUB_CACHE_TTL)
+    claims["sub"] = canonical
 
 
 def verify_jwt_token(token: str, access_token: str = None) -> dict:
@@ -115,8 +217,14 @@ def verify_token(
         # Use the reusable JWT verification function (handles both Cognito + Magic Auth)
         claims = verify_jwt_token(access_token)
 
-        # Magic Auth token — extract user info directly from JWT claims
+        # Magic Auth token — extract user info directly from JWT claims.
+        # Remap sub to the canonical public.users.user_id so downstream FKs
+        # (files.user_id, chat_messages.user_id, etc.) write against the
+        # correct row. Without this, Magic-Auth users see "success" in the
+        # UI but writes silently roll back. See PR #93 (agent-engine) for
+        # the upstream version of this fix.
         if claims.get("_auth_source") == "magic_auth":
+            _resolve_canonical_sub(claims)
             user_info = {
                 "sub": claims.get("sub"),
                 "email": claims.get("email"),
@@ -217,6 +325,11 @@ def verify_websocket_token(token: str) -> dict:
     try:
         claims = verify_jwt_token(token)
         if claims.get("_auth_source") == "magic_auth":
+            # Same canonical-sub remap as the HTTP path — WS handlers also
+            # write FKs against public.users.user_id (chat_messages,
+            # vector_stores, etc.). Without the remap, Magic-Auth WS
+            # sessions silently lose every write.
+            _resolve_canonical_sub(claims)
             return {
                 "sub": claims.get("sub"),
                 "email": claims.get("email"),
