@@ -340,7 +340,7 @@ class OrganizationAgent(Base):
         ForeignKey("agents.id", ondelete="CASCADE"),
         nullable=False
     )
-    assigned_by = Column(UUID(as_uuid=True), ForeignKey(USER_ID))
+    assigned_by = Column(UUID(as_uuid=True), ForeignKey(USER_ID, ondelete="SET NULL"))
     assigned_at = Column(DateTime(timezone=True), default=func.now())
     is_active = Column(Boolean, default=True)
     # Agent preferences

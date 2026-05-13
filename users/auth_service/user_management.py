@@ -18,6 +18,7 @@ from users.auth_service.schema import (
     edit_active_user, get_admin_role_id,
     get_invitation_by_token,
     get_user_by_email,
+    purge_inactive_users,
     regenerate_invitation_token, update_invitation_status,
     get_users_with_invitation_details,
     validate_invitation_token,
@@ -655,16 +656,20 @@ class UserManagementView:
 
     @user_management_routes.delete("/users/{user_email}", response_model=dict,
                                     summary="Delete a user by email",
-                                    description="Hard-delete unconfirmed users or soft-delete (deactivate) active users.")
+                                    description="Hard-delete unconfirmed users or soft-delete (deactivate) active users. "
+                                                "Pass ?force=true to permanently delete a previously soft-deleted user "
+                                                "(super-admin only — irreversibly removes the user from Aurora + Cognito).")
     def delete_user(
         self,
         user_email: str = Path(..., description="Email of user to delete"),
+        force: bool = Query(False, description="When true, permanently delete an already soft-deleted user."),
         user_data: dict = Depends(require_admin_role())
     ):
         """
         Delete user with different logic based on status:
         - If user is not confirmed (invitation pending/expired): Hard delete from database
         - If user is active: Soft delete (set is_deleted = True)
+        - If user is already soft-deleted AND force=true: Hard delete (super-admin force-purge)
         """
         try:
             # Check organization access if needed
@@ -684,7 +689,7 @@ class UserManagementView:
                 ScopedSession.remove()
 
                 # Perform deletion
-            result = delete_user_by_email(user_email)
+            result = delete_user_by_email(user_email, force=force)
 
             if result["success"]:
                 return create_response(
@@ -708,6 +713,47 @@ class UserManagementView:
                 message="Failed to delete user. Please try again.",
                 status=False,
                 status_code=500
+            )
+
+    @user_management_routes.post(
+        "/users/purge-inactive",
+        response_model=dict,
+        summary="Purge all deactivated users (super-admin only)",
+        description=(
+            "Hard-deletes every user where is_deleted=True. Removes Aurora rows + "
+            "Cognito accounts. Irreversible. Each user is processed in its own "
+            "savepoint so a failure on one row does not abort the batch — the "
+            "response carries per-user succeeded/failed lists."
+        ),
+    )
+    def purge_inactive(
+        self,
+        user_data: dict = Depends(require_admin_role()),
+    ):
+        """Super-admin force-purge of every soft-deleted user."""
+        try:
+            result = purge_inactive_users()
+
+            if result["success"]:
+                return create_response(
+                    message=result["message"],
+                    error_code=SUCCESS_CODE,
+                    status=True,
+                    data=result["data"],
+                )
+            return create_response(
+                message=result["message"],
+                error_code=result.get("error_code", SOMETHING_WENT_WRONG),
+                status=False,
+                status_code=500,
+            )
+        except Exception as e:
+            logger.error(f"Error in bulk purge: {str(e)}")
+            return create_response(
+                error_code=SOMETHING_WENT_WRONG,
+                message="Failed to purge inactive users. Please try again.",
+                status=False,
+                status_code=500,
             )
 
     @user_management_routes.post("/invite/bulk", response_model=dict,

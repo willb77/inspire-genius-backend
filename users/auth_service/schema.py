@@ -2,7 +2,13 @@ from datetime import datetime, timedelta, timezone
 import secrets
 import uuid
 from prism_inspire.db.session import ScopedSession
-from users.aws_wrapper.cognito_utils import delete_cognito_user, get_cognito_username_by_user_id, update_cognito_user_attributes
+from users.aws_wrapper.cognito_utils import (
+    delete_cognito_user,
+    disable_cognito_user,
+    enable_cognito_user,
+    get_cognito_username_by_user_id,
+    update_cognito_user_attributes,
+)
 from users.aws_wrapper.ses_email_service import send_invitation_email
 from users.models.rbac import Roles
 from users.models.user import InvitationStatusEnum, UserInvitation, Users, UserProfile
@@ -11,7 +17,7 @@ from prism_inspire.core.log_config import logger
 from users.organization.schema import get_organization_by_id
 from users.rbac.schema import add_user_to_group, get_role_by_id, get_role_id
 from sqlalchemy.orm import joinedload
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, update
 from typing import Any, Dict, List, Optional
 
 # Import response codes
@@ -738,14 +744,66 @@ def get_users_with_invitation_details(
         ScopedSession.remove()
 
 
-def delete_user_by_email(email: str) -> dict:
+def _hard_delete_user(session, user, email: str, pending_invitation) -> dict:
+    """Permanently delete user + profile + invitations + Cognito record.
+
+    Nulls out FK references that lack ON DELETE SET NULL so the user delete
+    doesn't trip an IntegrityError. The Alembic migration
+    `user_fk_set_null_for_audit_columns` makes the DB-side enforcement
+    authoritative, but this runtime null-out is belt-and-suspenders in case
+    the migration hasn't been applied to the target environment yet.
+    """
+    from users.models.issue import Issue
+    from users.models.user import OrganizationAgent
+
+    session.execute(
+        update(Issue).where(Issue.reported_by == user.user_id).values(reported_by=None)
+    )
+    session.execute(
+        update(OrganizationAgent)
+        .where(OrganizationAgent.assigned_by == user.user_id)
+        .values(assigned_by=None)
+    )
+
+    if user.profile:
+        session.delete(user.profile)
+
+    session.query(UserInvitation).filter(UserInvitation.email == email).delete()
+    session.delete(user)
+
+    cognito_deleted = False
+    try:
+        delete_cognito_user(email)
+        cognito_deleted = True
+        logger.info(f"Deleted user {email} from Cognito")
+    except Exception as e:
+        logger.warning(f"Failed to delete user {email} from Cognito: {e}")
+
+    session.commit()
+    return {
+        "success": True,
+        "message": f"User {email} permanently deleted",
+        "data": {
+            "email": email,
+            "deletion_type": "hard_delete",
+            "user_was_active": False,
+            "had_pending_invitation": pending_invitation is not None,
+            "cognito_deleted": cognito_deleted,
+        },
+    }
+
+
+def delete_user_by_email(email: str, force: bool = False) -> dict:
     """
     Delete user with different logic based on status:
     - If user is not confirmed (invitation pending/expired): Hard delete from database
     - If user is active: Soft delete (set is_deleted = True)
+    - If user is already soft-deleted AND force=True: Hard delete (super-admin purge)
 
     Args:
         email: Email address of user to delete
+        force: When True, allow hard-delete of an already soft-deleted user.
+               Super-admin-only — caller is responsible for authorization.
 
     Returns:
         Dict with success status, message, and data
@@ -753,7 +811,7 @@ def delete_user_by_email(email: str) -> dict:
     session = ScopedSession()
     try:
         # Check if user exists
-        
+
         user = (
             session.query(Users)
             .options(joinedload(Users.profile))
@@ -788,6 +846,11 @@ def delete_user_by_email(email: str) -> dict:
             ])
         ).first()
 
+        # Force-purge branch for already-soft-deleted users (super-admin only)
+        if user.is_deleted and force:
+            logger.info(f"Force-purging soft-deleted user {email}")
+            return _hard_delete_user(session, user, email, pending_invitation)
+
         if is_active_user:
             user.is_active = False
             user.is_deleted = True
@@ -795,6 +858,12 @@ def delete_user_by_email(email: str) -> dict:
                 user.profile.is_active = False
             try:
                 cognito_username = get_cognito_username_by_user_id(user.user_id)
+                # Explicit disable for defense-in-depth: prevents Cognito from
+                # issuing tokens to a soft-deleted user. The attribute update
+                # below also triggers admin_disable_user via _update_status,
+                # but the explicit call makes the intent visible at the call
+                # site and guards against future refactors of CognitoUserHandler.
+                disable_cognito_user(cognito_username)
                 update_cognito_user_attributes(cognito_username, {'is_active': False})
                 logger.info(f"Disabled user {email} in Cognito as part of deletion")
             except Exception as e:
@@ -803,55 +872,27 @@ def delete_user_by_email(email: str) -> dict:
             session.commit()
             return {
                 "success": True,
-                "message": "Active user found",
+                "message": "Active user soft-deleted",
                 "data": {
                     "email": email,
-                    "deletion_type": "invitation_only",
+                    "deletion_type": "soft_delete",
                     "user_was_active": True
                 }
             }
-        
+
         if user.is_deleted:
             return {
                 "success": False,
-                "message": f"User {email} is already deactivated",
+                "message": f"User {email} is already deactivated. Pass force=true to permanently delete.",
                 "data": {
                     "email": email,
-                    "already_soft_deleted": True
+                    "already_soft_deleted": True,
+                    "can_force_purge": True
                 }
             }
 
         if pending_invitation:
-            # Hard delete
-            if user.profile:
-                session.delete(user.profile)
-
-            session.query(UserInvitation).filter(
-                UserInvitation.email == email
-            ).delete()
-
-            session.delete(user)
-
-            cognito_deleted = False
-            try:
-                delete_cognito_user(email)
-                cognito_deleted = True
-                logger.info(f"Deleted user {email} from Cognito")
-            except Exception as e:
-                logger.warning(f"Failed to delete user {email} from Cognito: {e}")
-
-            session.commit()
-            return {
-                "success": True,
-                "message": f"User {email} permanently deleted (unconfirmed user)",
-                "data": {
-                    "email": email,
-                    "deletion_type": "hard_delete",
-                    "user_was_active": False,
-                    "had_pending_invitation": pending_invitation is not None,
-                    "cognito_deleted": cognito_deleted
-                }
-            }
+            return _hard_delete_user(session, user, email, pending_invitation)
 
         else:
             return {
@@ -867,6 +908,76 @@ def delete_user_by_email(email: str) -> dict:
             "success": False,
             "message": f"Failed to delete user: {str(e)}",
             "error_code": SOMETHING_WENT_WRONG
+        }
+    finally:
+        session.close()
+        ScopedSession.remove()
+
+
+def purge_inactive_users() -> dict:
+    """
+    Hard-delete every user where is_deleted=True. Super-admin only.
+
+    Each user is processed inside its own SAVEPOINT so one row failing (e.g.
+    an FK still using NO ACTION, or a Cognito API blip) doesn't abort the
+    whole batch. Cognito deletes happen sequentially inside the loop via
+    `_hard_delete_user()` — at ~200 ms each, 100 users finishes in ~20 s
+    which fits inside the 29 s API Gateway timeout. If a tenant ever has
+    > ~100 inactive users at once, this should be moved to a Step Function
+    or SQS fan-out — see USER_MANAGEMENT_REVIEW_2026-05-13.md §3 item 5.
+
+    Returns:
+        Dict with success status, message, and data: {total, succeeded, failed}.
+        Per-user failure rows include the exception message (truncated to 200 chars).
+    """
+    session = ScopedSession()
+    succeeded: List[str] = []
+    failed: List[Dict[str, Any]] = []
+
+    try:
+        inactive = session.query(Users).filter(Users.is_deleted.is_(True)).all()
+        total = len(inactive)
+        logger.info(f"Bulk purge requested: {total} soft-deleted user(s) to process")
+
+        for user in inactive:
+            email = user.email
+            sp = session.begin_nested()
+            try:
+                pending_invitation = (
+                    session.query(UserInvitation)
+                    .filter(UserInvitation.email == email)
+                    .first()
+                )
+                _hard_delete_user(session, user, email, pending_invitation)
+                sp.commit()
+                succeeded.append(email)
+            except Exception as e:
+                sp.rollback()
+                logger.warning(f"Failed to purge {email}: {e}")
+                failed.append({"email": email, "reason": str(e)[:200]})
+
+        session.commit()
+
+        logger.info(
+            f"Bulk purge complete: succeeded={len(succeeded)} failed={len(failed)} total={total}"
+        )
+
+        return {
+            "success": True,
+            "message": f"Purge complete: {len(succeeded)}/{total} succeeded",
+            "data": {
+                "total": total,
+                "succeeded": succeeded,
+                "failed": failed,
+            },
+        }
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Bulk purge failed: {e}")
+        return {
+            "success": False,
+            "message": f"Bulk purge failed: {e}",
+            "error_code": SOMETHING_WENT_WRONG,
         }
     finally:
         session.close()
@@ -1206,6 +1317,24 @@ def edit_active_user(email: str, edit_data: dict) -> dict:
         # Update Cognito (non-blocking — DB is already committed)
         cognito_warning = None
         if cognito_attributes:
+            # Defense-in-depth: when reactivating (is_active False -> True) or
+            # deactivating via Edit, explicitly enable/disable the Cognito
+            # account so token issuance is gated at the auth layer too. The
+            # subsequent update_cognito_user_attributes call also triggers this
+            # via _update_status — kept idempotent for refactor safety, same
+            # reasoning as delete_user_by_email's soft-delete branch.
+            if 'is_active' in edit_data:
+                try:
+                    cognito_username = get_cognito_username_by_user_id(user.user_id)
+                    if edit_data['is_active']:
+                        enable_cognito_user(cognito_username)
+                    else:
+                        disable_cognito_user(cognito_username)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to flip Cognito enabled-state for {email}: {e}"
+                    )
+
             error_response = validator.update_cognito_user(user.user_id, cognito_attributes)
             if error_response:
                 cognito_warning = error_response.get("message", "Cognito sync failed")
