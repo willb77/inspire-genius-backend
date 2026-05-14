@@ -151,6 +151,78 @@ def sign_up_user(
         }
 
 
+def disable_cognito_user(username: str) -> Dict[str, Any]:
+    """Disable a Cognito user — they cannot authenticate until re-enabled.
+
+    Cognito's admin_disable_user is the defense-in-depth complement to setting
+    the application-layer `users.is_active=False` flag. Without it, a
+    soft-deleted user can still obtain tokens from Cognito; the only thing
+    stopping them from accessing the app is our own AuthMiddleware check.
+
+    Note: update_cognito_user_attributes(..., {'is_active': False}) already
+    triggers admin_disable_user internally via CognitoUserHandler._update_status.
+    This explicit helper exists so callers can disable WITHOUT also writing
+    a Cognito attribute, and so the intent is visible at the call site.
+
+    Args:
+        username: Cognito username (typically the user's email)
+
+    Returns:
+        Dict containing status and message. UserNotFoundException is treated
+        as success (idempotent semantics — a missing user is "already disabled").
+    """
+    try:
+        cognito_client.admin_disable_user(
+            UserPoolId=USER_POOL_ID,
+            Username=username,
+        )
+        logger.info(f"Disabled Cognito user: {username}")
+        return {"status": True, "message": "Cognito user disabled"}
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "Unknown")
+        message = e.response.get("Error", {}).get("Message", str(e))
+        if code == "UserNotFoundException":
+            logger.warning(f"Cognito user {username} not found during disable")
+            return {"status": True, "message": USER_NOT_FOUND + " (cannot disable)"}
+        logger.error(f"Cognito error disabling {username}: {code} - {message}")
+        return {"status": False, "message": f"Failed to disable Cognito user: {message}"}
+    except Exception as e:
+        logger.error(f"Unexpected error disabling Cognito user {username}: {e}")
+        return {"status": False, "message": f"Unexpected error: {e}"}
+
+
+def enable_cognito_user(username: str) -> Dict[str, Any]:
+    """Re-enable a previously disabled Cognito user (used during reactivation).
+
+    Counterpart of disable_cognito_user. Idempotent — calling on an already
+    enabled user is a no-op from Cognito's perspective.
+
+    Args:
+        username: Cognito username (typically the user's email)
+
+    Returns:
+        Dict containing status and message.
+    """
+    try:
+        cognito_client.admin_enable_user(
+            UserPoolId=USER_POOL_ID,
+            Username=username,
+        )
+        logger.info(f"Enabled Cognito user: {username}")
+        return {"status": True, "message": "Cognito user enabled"}
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "Unknown")
+        message = e.response.get("Error", {}).get("Message", str(e))
+        if code == "UserNotFoundException":
+            logger.warning(f"Cognito user {username} not found during enable")
+            return {"status": True, "message": USER_NOT_FOUND + " (cannot enable)"}
+        logger.error(f"Cognito error enabling {username}: {code} - {message}")
+        return {"status": False, "message": f"Failed to enable Cognito user: {message}"}
+    except Exception as e:
+        logger.error(f"Unexpected error enabling Cognito user {username}: {e}")
+        return {"status": False, "message": f"Unexpected error: {e}"}
+
+
 def delete_cognito_user(username: str) -> Dict[str, Any]:
     """
     Delete a user from AWS Cognito (admin operation)
